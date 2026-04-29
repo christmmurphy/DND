@@ -42,6 +42,16 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
 // ============================================================
+//  URL hash helpers
+// ============================================================
+const getHashMapId = () => {
+  const m = window.location.hash.match(/^#map=([a-z0-9_-]+)$/);
+  return m ? m[1] : null;
+};
+const pushHashMapId = (id) => history.pushState(null, '', `#map=${id}`);
+const replaceHashMapId = (id) => history.replaceState(null, '', `#map=${id}`);
+
+// ============================================================
 //  API
 // ============================================================
 const API    = "api.php";
@@ -59,19 +69,19 @@ async function api(action, mapId, opts = {}) {
   return res.json();
 }
 
-const apiListMaps       = ()                  => api("listmaps", null);
-const apiNewMap         = (name)              => api("newmap", null, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
-const apiRenameMap      = (id, name)          => api("renamemap", id, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
-const apiDeleteMap      = (id)               => api("deletemap", id, { method: "POST", headers: { ...authHeaders() } });
-const apiLoad           = (mapId)            => api("load", mapId);
+const apiListMaps       = ()                   => api("listmaps", null);
+const apiNewMap         = (name)               => api("newmap", null, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
+const apiRenameMap      = (id, name)           => api("renamemap", id, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
+const apiDeleteMap      = (id)                 => api("deletemap", id, { method: "POST", headers: { ...authHeaders() } });
+const apiLoad           = (mapId)              => api("load", mapId);
 const apiSaveMeta       = (mapId, pins, zones) => api("savemeta", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ pins, zones }) });
-const apiSaveMap        = (mapId, dataUrl)   => api("savemap", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ data: dataUrl }) });
-const apiClearMap       = (mapId)            => api("clearmap", mapId, { method: "POST", headers: { ...authHeaders() } });
-const mapImageUrl       = (mapId, v)         => `${API}?action=getmap&map=${encodeURIComponent(mapId)}${v ? "&v=" + v : ""}`;
-const apiListSnapshots  = (mapId)            => api("listsnapshots", mapId);
-const apiSaveSnapshot   = (mapId, label)     => api("savesnapshot", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ label }) });
-const apiLoadSnapshot   = (mapId, snapId)    => fetch(`${API}?action=loadsnapshot&map=${encodeURIComponent(mapId)}&snapshot=${encodeURIComponent(snapId)}`, { method: "POST", headers: { ...authHeaders() } }).then(r => r.json());
-const apiDeleteSnapshot = (mapId, snapId)    => fetch(`${API}?action=deletesnapshot&map=${encodeURIComponent(mapId)}&snapshot=${encodeURIComponent(snapId)}`, { method: "POST", headers: { ...authHeaders() } }).then(r => r.json());
+const apiSaveMap        = (mapId, dataUrl)     => api("savemap", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ data: dataUrl }) });
+const apiClearMap       = (mapId)              => api("clearmap", mapId, { method: "POST", headers: { ...authHeaders() } });
+const mapImageUrl       = (mapId, v)           => `${API}?action=getmap&map=${encodeURIComponent(mapId)}${v ? "&v=" + v : ""}`;
+const apiListSnapshots  = (mapId)              => api("listsnapshots", mapId);
+const apiSaveSnapshot   = (mapId, label)       => api("savesnapshot", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ label }) });
+const apiLoadSnapshot   = (mapId, snapId)      => fetch(`${API}?action=loadsnapshot&map=${encodeURIComponent(mapId)}&snapshot=${encodeURIComponent(snapId)}`, { method: "POST", headers: { ...authHeaders() } }).then(r => r.json());
+const apiDeleteSnapshot = (mapId, snapId)      => fetch(`${API}?action=deletesnapshot&map=${encodeURIComponent(mapId)}&snapshot=${encodeURIComponent(snapId)}`, { method: "POST", headers: { ...authHeaders() } }).then(r => r.json());
 
 function compressImage(file, { maxDim = 2400, quality = 0.82 } = {}) {
   return new Promise((resolve, reject) => {
@@ -130,6 +140,9 @@ const Camera    = (p) => <Svg {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2
 const RotateCcw = (p) => <Svg {...p}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></Svg>;
 const Pencil    = (p) => <Svg {...p}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></Svg>;
 const ChevronDown = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9"/></Svg>;
+const Brush     = (p) => <Svg {...p}><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.07"/><path d="M7.07 14.94c-1.31 2.91-1.52 3.94-1.07 4.39.45.45 1.48.24 4.39-1.07"/><path d="M3 21l4-1-3-3Z"/></Svg>;
+const Undo2     = (p) => <Svg {...p}><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></Svg>;
+const Redo2     = (p) => <Svg {...p}><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/></Svg>;
 
 // ============================================================
 //  Constants
@@ -152,11 +165,13 @@ const DANGER_LEVELS = {
   lethal: { label: "Lethal", fill: "rgba(60, 8, 8, 0.45)",     stroke: "#3c0808", desc: "Legendary creatures, planar incursions, certain death." },
 };
 
+const MAX_HISTORY = 4;
+
 // ============================================================
-//  Root: manages maps list + active map
+//  Root — manages maps list, active map, URL hash
 // ============================================================
 function App() {
-  const [maps, setMaps]           = useState(null); // null = loading
+  const [maps, setMaps]               = useState(null);
   const [activeMapId, setActiveMapId] = useState(null);
   const [globalError, setGlobalError] = useState(null);
 
@@ -165,16 +180,20 @@ function App() {
       try {
         const { maps: list } = await apiListMaps();
         if (!list || list.length === 0) {
-          // First run with empty server — create a default map
           const created = await apiNewMap("Menagerie Coast");
-          setMaps([{ id: created.id, name: created.name }]);
+          const entry = { id: created.id, name: created.name };
+          setMaps([entry]);
           setActiveMapId(created.id);
           sessionStorage.setItem('lastMapId', created.id);
+          replaceHashMapId(created.id);
         } else {
           setMaps(list);
-          const stored = sessionStorage.getItem('lastMapId');
-          const initial = (stored && list.some(m => m.id === stored)) ? stored : list[0].id;
+          const hashId   = getHashMapId();
+          const storedId = sessionStorage.getItem('lastMapId');
+          const preferred = hashId || storedId;
+          const initial = (preferred && list.some(m => m.id === preferred)) ? preferred : list[0].id;
           setActiveMapId(initial);
+          replaceHashMapId(initial);
         }
       } catch (e) {
         setGlobalError("Could not reach the server: " + e.message);
@@ -183,6 +202,26 @@ function App() {
     })();
   }, []);
 
+  // Browser back / forward support
+  useEffect(() => {
+    if (!maps) return;
+    const handler = () => {
+      const id = getHashMapId();
+      if (id && maps.some(m => m.id === id)) {
+        sessionStorage.setItem('lastMapId', id);
+        setActiveMapId(id);
+      }
+    };
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
+  }, [maps]);
+
+  const selectMap = (id) => {
+    sessionStorage.setItem('lastMapId', id);
+    pushHashMapId(id);
+    setActiveMapId(id);
+  };
+
   const handleNewMap = async () => {
     const name = prompt("Name for the new map:");
     if (!name?.trim()) return;
@@ -190,10 +229,8 @@ function App() {
       const created = await apiNewMap(name.trim());
       const fresh = await apiListMaps();
       setMaps(fresh.maps);
-      setActiveMapId(created.id);
-    } catch (e) {
-      alert("Could not create map: " + e.message);
-    }
+      selectMap(created.id);
+    } catch (e) { alert("Could not create map: " + e.message); }
   };
 
   const handleRenameMap = async (id, currentName) => {
@@ -202,9 +239,7 @@ function App() {
     try {
       await apiRenameMap(id, name.trim());
       setMaps(prev => prev.map(m => m.id === id ? { ...m, name: name.trim() } : m));
-    } catch (e) {
-      alert("Could not rename: " + e.message);
-    }
+    } catch (e) { alert("Could not rename: " + e.message); }
   };
 
   const handleDeleteMap = async (id) => {
@@ -214,43 +249,24 @@ function App() {
       await apiDeleteMap(id);
       const fresh = await apiListMaps();
       setMaps(fresh.maps);
-      if (activeMapId === id) setActiveMapId(fresh.maps[0]?.id ?? null);
-    } catch (e) {
-      alert("Could not delete: " + e.message);
-    }
+      if (activeMapId === id) selectMap(fresh.maps[0]?.id ?? null);
+    } catch (e) { alert("Could not delete: " + e.message); }
   };
 
   if (maps === null) return <div className="splash">Unfurling the chart…</div>;
-
-  if (globalError) {
-    return (
-      <div className="splash flex-col gap-3 text-center px-8">
-        <AlertTriangle size={32} style={{ color: "#8b1a1a" }} />
-        <p style={{ color: "#5c1a1a" }}>{globalError}</p>
-      </div>
-    );
-  }
+  if (globalError) return (
+    <div className="splash flex-col gap-3 text-center px-8">
+      <AlertTriangle size={32} style={{ color: "#8b1a1a" }} />
+      <p style={{ color: "#5c1a1a" }}>{globalError}</p>
+    </div>
+  );
 
   return (
     <div className="w-full h-full flex flex-col" style={{ fontFamily: "'EB Garamond', Georgia, serif", background: `radial-gradient(ellipse at 20% 10%, #e8d4a8 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, #c9a875 0%, transparent 60%), radial-gradient(ellipse at 50% 50%, #d8c094 0%, #b8966a 100%)`, color: "#2a1810" }}>
-      {/* Paper grain overlay */}
       <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.15  0 0 0 0 0.1  0 0 0 0 0.05  0 0 0 0.18 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>")`, mixBlendMode: "multiply", opacity: 0.55, zIndex: 0 }} />
-
-      {/* Tab bar */}
-      <MapTabBar
-        maps={maps}
-        activeMapId={activeMapId}
-        onSelect={(id) => { sessionStorage.setItem('lastMapId', id); setActiveMapId(id); }}
-        onNew={handleNewMap}
-        onRename={handleRenameMap}
-        onDelete={handleDeleteMap}
-      />
-
-      {/* Active map canvas */}
+      <MapTabBar maps={maps} activeMapId={activeMapId} onSelect={selectMap} onNew={handleNewMap} onRename={handleRenameMap} onDelete={handleDeleteMap} />
       <div className="flex-1 overflow-hidden relative" style={{ zIndex: 1 }}>
-        {activeMapId && (
-          <MapCanvas key={activeMapId} mapId={activeMapId} mapName={maps.find(m => m.id === activeMapId)?.name ?? ""} />
-        )}
+        {activeMapId && <MapCanvas key={activeMapId} mapId={activeMapId} mapName={maps.find(m => m.id === activeMapId)?.name ?? ""} />}
       </div>
     </div>
   );
@@ -264,20 +280,14 @@ function MapTabBar({ maps, activeMapId, onSelect, onNew, onRename, onDelete }) {
     <div className="flex items-stretch overflow-x-auto tab-scroll flex-shrink-0"
          style={{ borderBottom: "2px solid #5c4030", backgroundColor: "rgba(42, 24, 16, 0.93)", minHeight: 38, zIndex: 10 }}>
       {maps.map(m => (
-        <MapTab
-          key={m.id}
-          map={m}
-          active={m.id === activeMapId}
-          onSelect={() => onSelect(m.id)}
-          onRename={() => onRename(m.id, m.name)}
-          onDelete={maps.length > 1 ? () => onDelete(m.id) : null}
-        />
+        <MapTab key={m.id} map={m} active={m.id === activeMapId}
+                onSelect={() => onSelect(m.id)}
+                onRename={() => onRename(m.id, m.name)}
+                onDelete={maps.length > 1 ? () => onDelete(m.id) : null} />
       ))}
-      <button
-        onClick={onNew}
-        className="flex items-center gap-1 px-3 py-1 text-xs opacity-60 hover:opacity-100 flex-shrink-0 transition-opacity"
-        style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }}
-        title="New map">
+      <button onClick={onNew}
+              className="flex items-center gap-1 px-3 py-1 text-xs opacity-60 hover:opacity-100 flex-shrink-0 transition-opacity"
+              style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }} title="New map">
         <Plus size={13} /> New Map
       </button>
     </div>
@@ -287,48 +297,30 @@ function MapTabBar({ maps, activeMapId, onSelect, onNew, onRename, onDelete }) {
 function MapTab({ map, active, onSelect, onRename, onDelete }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
-
   useEffect(() => {
     if (!menuOpen) return;
     const close = (e) => { if (!menuRef.current?.contains(e.target)) setMenuOpen(false); };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [menuOpen]);
-
   return (
-    <div className={`flex items-center gap-1 px-3 py-1 flex-shrink-0 relative border-r cursor-pointer transition-colors`}
-         style={{
-           borderColor: "#5c4030",
-           backgroundColor: active ? "rgba(244, 232, 208, 0.15)" : "transparent",
-           borderBottom: active ? "2px solid #e8d4a8" : "2px solid transparent",
-           marginBottom: -2,
-         }}
+    <div className="flex items-center gap-1 px-3 py-1 flex-shrink-0 relative border-r cursor-pointer transition-colors"
+         style={{ borderColor: "#5c4030", backgroundColor: active ? "rgba(244, 232, 208, 0.15)" : "transparent", borderBottom: active ? "2px solid #e8d4a8" : "2px solid transparent", marginBottom: -2 }}
          onClick={onSelect}>
-      <span style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 13, color: active ? "#f4e8d0" : "#a89070", whiteSpace: "nowrap" }}>
-        {map.name}
-      </span>
+      <span style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 13, color: active ? "#f4e8d0" : "#a89070", whiteSpace: "nowrap" }}>{map.name}</span>
       <div className="relative" ref={menuRef} onClick={e => e.stopPropagation()}>
-        <button
-          className="ml-1 p-0.5 rounded opacity-50 hover:opacity-100 transition-opacity"
-          style={{ color: "#f4e8d0" }}
-          onClick={() => setMenuOpen(o => !o)}
-          title="Map options">
-          <ChevronDown size={11} />
-        </button>
+        <button className="ml-1 p-0.5 rounded opacity-50 hover:opacity-100 transition-opacity" style={{ color: "#f4e8d0" }}
+                onClick={() => setMenuOpen(o => !o)} title="Map options"><ChevronDown size={11} /></button>
         {menuOpen && (
           <div className="absolute top-full left-0 mt-1 rounded shadow-lg z-50 overflow-hidden"
                style={{ backgroundColor: "rgba(42, 24, 16, 0.97)", border: "1px solid #8b6f47", minWidth: 120 }}>
             <button onClick={() => { setMenuOpen(false); onRename(); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/10 text-left"
-                    style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }}>
-              <Pencil size={12} /> Rename
-            </button>
+                    style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }}><Pencil size={12} /> Rename</button>
             {onDelete && (
               <button onClick={() => { setMenuOpen(false); onDelete(); }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/10 text-left"
-                      style={{ color: "#c93838", fontFamily: "'IM Fell English SC', serif" }}>
-                <Trash2 size={12} /> Delete
-              </button>
+                      style={{ color: "#c93838", fontFamily: "'IM Fell English SC', serif" }}><Trash2 size={12} /> Delete</button>
             )}
           </div>
         )}
@@ -338,7 +330,7 @@ function MapTab({ map, active, onSelect, onRename, onDelete }) {
 }
 
 // ============================================================
-//  MapCanvas — per-map state, fully isolated via key=mapId
+//  MapCanvas — isolated per map via key=mapId
 // ============================================================
 function MapCanvas({ mapId, mapName }) {
   const [map, setMap]               = useState(null);
@@ -359,20 +351,71 @@ function MapCanvas({ mapId, mapName }) {
   const [snapshots, setSnapshots]   = useState([]);
   const [snapshotStatus, setSnapshotStatus] = useState("idle");
 
-  const wrapRef           = useRef(null);
-  const mapRef            = useRef(null);
-  const imgContainerRef   = useRef(null);
-  const fileInputRef = useRef(null);
-  const pointersRef  = useRef(new Map());
-  const gestureRef   = useRef(null);
+  // Undo / redo — track add/delete operations only (not text edits)
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+
+  const wrapRef         = useRef(null);
+  const mapRef          = useRef(null);
+  const imgContainerRef = useRef(null);
+  const fileInputRef    = useRef(null);
+  const pointersRef     = useRef(new Map());
+  const gestureRef      = useRef(null);
+  const brushPointsRef  = useRef(null); // accumulates points during brush stroke
   const lastVersionRef    = useRef(0);
   const lastMapVersionRef = useRef(0);
   const editingRef        = useRef(null);
+  // Mirror current pins/zones into refs so history closures always capture latest
+  const pinsRef  = useRef(pins);
+  const zonesRef = useRef(zones);
   useEffect(() => { editingRef.current = editingItem; }, [editingItem]);
+  useEffect(() => { pinsRef.current = pins; }, [pins]);
+  useEffect(() => { zonesRef.current = zones; }, [zones]);
 
   const triggerFileSelect = () => fileInputRef.current?.click();
 
-  // Initial load
+  // ---------- History ----------
+  const pushToHistory = useCallback(() => {
+    setUndoStack(prev => [...prev.slice(-(MAX_HISTORY - 1)), { pins: pinsRef.current, zones: zonesRef.current }]);
+    setRedoStack([]);
+  }, []);
+
+  const undo = useCallback(() => {
+    setUndoStack(prev => {
+      if (prev.length === 0) return prev;
+      const snapshot = prev[prev.length - 1];
+      setRedoStack(r => [{ pins: pinsRef.current, zones: zonesRef.current }, ...r.slice(0, MAX_HISTORY - 1)]);
+      setPins(snapshot.pins);
+      setZones(snapshot.zones);
+      setEditingItem(null); setSelectedId(null);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setRedoStack(prev => {
+      if (prev.length === 0) return prev;
+      const snapshot = prev[0];
+      setUndoStack(u => [...u.slice(-(MAX_HISTORY - 1)), { pins: pinsRef.current, zones: zonesRef.current }]);
+      setPins(snapshot.pins);
+      setZones(snapshot.zones);
+      setEditingItem(null); setSelectedId(null);
+      return prev.slice(1);
+    });
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo, redo]);
+
+  // ---------- Initial load ----------
   useEffect(() => {
     (async () => {
       try {
@@ -386,14 +429,12 @@ function MapCanvas({ mapId, mapName }) {
         }
         const { snapshots: snaps } = await apiListSnapshots(mapId);
         setSnapshots(snaps || []);
-      } catch (e) {
-        setStorageError("Could not reach the server: " + e.message);
-      }
+      } catch (e) { setStorageError("Could not reach the server: " + e.message); }
       setLoaded(true);
     })();
   }, [mapId]);
 
-  // Autosave meta
+  // ---------- Autosave meta ----------
   const skipNextSave = useRef(true);
   useEffect(() => {
     if (!loaded) return;
@@ -405,14 +446,12 @@ function MapCanvas({ mapId, mapName }) {
         lastVersionRef.current = res.version || lastVersionRef.current;
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
-      } catch {
-        setSaveStatus("error");
-      }
+      } catch { setSaveStatus("error"); }
     }, 400);
     return () => clearTimeout(t);
   }, [pins, zones, loaded]);
 
-  // Poll
+  // ---------- Poll ----------
   useEffect(() => {
     if (!loaded) return;
     let alive = true;
@@ -423,16 +462,13 @@ function MapCanvas({ mapId, mapName }) {
         if (!alive) return;
         if ((data.version || 0) > lastVersionRef.current) {
           lastVersionRef.current = data.version;
-          setPins(data.pins || []);
-          setZones(data.zones || []);
+          setPins(data.pins || []); setZones(data.zones || []);
           skipNextSave.current = true;
         }
         if ((data.mapVersion || 0) > lastMapVersionRef.current) {
           lastMapVersionRef.current = data.mapVersion;
           setMap(mapImageUrl(mapId, data.mapVersion));
-        } else if (!data.hasMap && map) {
-          setMap(null);
-        }
+        } else if (!data.hasMap && map) { setMap(null); }
       } catch {}
     };
     const id = setInterval(tick, 5000);
@@ -441,14 +477,12 @@ function MapCanvas({ mapId, mapName }) {
     return () => { alive = false; clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [loaded, saveStatus, map, mapId]);
 
-  // Map upload
+  // ---------- Map upload ----------
   const handleMapUpload = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
+    const file = e.target.files?.[0]; e.target.value = "";
     if (!file) return;
     if (!file.type.startsWith("image/")) { setStorageError("Please choose an image file."); return; }
-    setStorageError(null);
-    setSaveStatus("saving");
+    setStorageError(null); setSaveStatus("saving");
     try {
       const dataUrl = await compressImage(file);
       const res = await apiSaveMap(mapId, dataUrl);
@@ -456,37 +490,20 @@ function MapCanvas({ mapId, mapName }) {
       setMap(mapImageUrl(mapId, lastMapVersionRef.current));
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
-    } catch (err) {
-      setSaveStatus("error");
-      setStorageError("Upload failed: " + err.message);
-    }
+    } catch (err) { setSaveStatus("error"); setStorageError("Upload failed: " + err.message); }
   };
 
-  const clearMap = async () => {
-    if (!confirm("Remove the current map image? Pins and zones will stay.")) return;
-    try {
-      await apiClearMap(mapId);
-      lastMapVersionRef.current = 0;
-      setMap(null);
-    } catch (e) {
-      setStorageError("Could not remove map: " + e.message);
-    }
-  };
-
-  // Snapshot actions
+  // ---------- Snapshots ----------
   const handleSaveSnapshot = async () => {
     const label = prompt("Snapshot label (leave blank for timestamp):");
-    if (label === null) return; // cancelled
+    if (label === null) return;
     setSnapshotStatus("saving");
     try {
       const snap = await apiSaveSnapshot(mapId, label.trim());
       setSnapshots(prev => [...prev, snap]);
       setSnapshotStatus("saved");
       setTimeout(() => setSnapshotStatus("idle"), 1500);
-    } catch (e) {
-      setSnapshotStatus("error");
-      alert("Snapshot failed: " + e.message);
-    }
+    } catch (e) { setSnapshotStatus("error"); alert("Snapshot failed: " + e.message); }
   };
 
   const handleRestoreSnapshot = async (snap) => {
@@ -494,37 +511,22 @@ function MapCanvas({ mapId, mapName }) {
     try {
       const res = await apiLoadSnapshot(mapId, snap.id);
       if (res.error) throw new Error(res.error);
-      // Reload everything from server
       const data = await apiLoad(mapId);
-      setPins(data.pins || []);
-      setZones(data.zones || []);
+      setPins(data.pins || []); setZones(data.zones || []);
       lastVersionRef.current = data.version || 0;
       skipNextSave.current = true;
-      if (data.hasMap) {
-        lastMapVersionRef.current = data.mapVersion || 0;
-        setMap(mapImageUrl(mapId, data.mapVersion));
-      } else {
-        lastMapVersionRef.current = 0;
-        setMap(null);
-      }
-    } catch (e) {
-      alert("Restore failed: " + e.message);
-    }
+      if (data.hasMap) { lastMapVersionRef.current = data.mapVersion || 0; setMap(mapImageUrl(mapId, data.mapVersion)); }
+      else { lastMapVersionRef.current = 0; setMap(null); }
+    } catch (e) { alert("Restore failed: " + e.message); }
   };
 
   const handleDeleteSnapshot = async (snap) => {
     if (!confirm(`Delete snapshot "${snap.label}"?`)) return;
-    try {
-      await apiDeleteSnapshot(mapId, snap.id);
-      setSnapshots(prev => prev.filter(s => s.id !== snap.id));
-    } catch (e) {
-      alert("Delete failed: " + e.message);
-    }
+    try { await apiDeleteSnapshot(mapId, snap.id); setSnapshots(prev => prev.filter(s => s.id !== snap.id)); }
+    catch (e) { alert("Delete failed: " + e.message); }
   };
 
-  // Coords
-  // Use the inner image container (not the outer transformed div) so coords
-  // are always relative to the actual image, regardless of zoom/pan.
+  // ---------- Coords — use inner image container for accuracy at all zoom levels ----------
   const eventToMapCoords = (e) => {
     const el = imgContainerRef.current || mapRef.current;
     const rect = el.getBoundingClientRect();
@@ -534,7 +536,7 @@ function MapCanvas({ mapId, mapName }) {
     };
   };
 
-  // Pointer handling
+  // ---------- Pointer handling ----------
   const handleMapPointerDown = (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {}
@@ -545,28 +547,36 @@ function MapCanvas({ mapId, mapName }) {
       const pts = [...pointersRef.current.values()];
       const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
       gestureRef.current = { type: "pinch", initialDist: dist || 1, initialZoom: zoom, initialPan: { ...pan }, initialMid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 } };
-      setDrawing(null); setPanning(null); return;
+      setDrawing(null); setPanning(null); brushPointsRef.current = null; return;
     }
     if (count !== 1) return;
 
-    if (mode === "pan") {
-      setPanning({ startX: e.clientX, startY: e.clientY, origX: pan.x, origY: pan.y }); return;
-    }
+    if (mode === "pan") { setPanning({ startX: e.clientX, startY: e.clientY, origX: pan.x, origY: pan.y }); return; }
+
     if (mode === "pin") {
       const { x, y } = eventToMapCoords(e);
+      pushToHistory();
       const newPin = { id: "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x, y, title: "New Pin", description: "", type: "quest" };
       setPins(prev => [...prev, newPin]);
       setEditingItem({ kind: "pin", id: newPin.id });
       setMode("view"); return;
     }
+
     if (mode === "zone") {
       const { x, y } = eventToMapCoords(e);
-      setDrawing({ x, y, radius: 0 });
+      setDrawing({ x, y, radius: 0 }); return;
+    }
+
+    if (mode === "brush") {
+      const { x, y } = eventToMapCoords(e);
+      brushPointsRef.current = [{ x, y }];
+      setDrawing({ type: "path", points: brushPointsRef.current });
     }
   };
 
   const handleMapPointerMove = (e) => {
     if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
     if (gestureRef.current?.type === "pinch" && pointersRef.current.size >= 2) {
       const pts = [...pointersRef.current.values()].slice(0, 2);
       const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
@@ -576,23 +586,50 @@ function MapCanvas({ mapId, mapName }) {
       setPan({ x: gestureRef.current.initialPan.x + (mid.x - gestureRef.current.initialMid.x), y: gestureRef.current.initialPan.y + (mid.y - gestureRef.current.initialMid.y) });
       return;
     }
+
     if (panning) { setPan({ x: panning.origX + (e.clientX - panning.startX), y: panning.origY + (e.clientY - panning.startY) }); return; }
-    if (drawing) {
+
+    if (drawing && !drawing.type) {
       const { x, y } = eventToMapCoords(e);
       setDrawing({ ...drawing, radius: Math.hypot(x - drawing.x, y - drawing.y) });
+      return;
+    }
+
+    if (drawing?.type === "path" && brushPointsRef.current) {
+      const { x, y } = eventToMapCoords(e);
+      const pts = brushPointsRef.current;
+      const last = pts[pts.length - 1];
+      if (Math.hypot(x - last.x, y - last.y) > 0.003) {
+        brushPointsRef.current = [...pts, { x, y }];
+        setDrawing({ type: "path", points: brushPointsRef.current });
+      }
     }
   };
 
   const handleMapPointerUp = (e) => {
     if (e?.pointerId !== undefined) pointersRef.current.delete(e.pointerId);
-    if (gestureRef.current?.type === "pinch" && pointersRef.current.size < 2) { gestureRef.current = null; setPanning(null); setDrawing(null); return; }
+    if (gestureRef.current?.type === "pinch" && pointersRef.current.size < 2) { gestureRef.current = null; setPanning(null); setDrawing(null); brushPointsRef.current = null; return; }
     if (panning && pointersRef.current.size === 0) { setPanning(null); return; }
+
     if (drawing && pointersRef.current.size === 0) {
-      if (drawing.radius >= 0.015) {
-        const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x: drawing.x, y: drawing.y, radius: drawing.radius, name: "New Hot Zone", dangerLevel: "medium", description: "", encounters: "" };
-        setZones(prev => [...prev, newZone]);
-        setEditingItem({ kind: "zone", id: newZone.id });
-        setMode("view");
+      if (drawing.type === "path") {
+        const pts = brushPointsRef.current || [];
+        brushPointsRef.current = null;
+        if (pts.length >= 3) {
+          pushToHistory();
+          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), type: "path", points: pts, name: "New Coastline", dangerLevel: "medium", description: "", encounters: "" };
+          setZones(prev => [...prev, newZone]);
+          setEditingItem({ kind: "zone", id: newZone.id });
+          setMode("view");
+        }
+      } else {
+        if (drawing.radius >= 0.015) {
+          pushToHistory();
+          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x: drawing.x, y: drawing.y, radius: drawing.radius, name: "New Hot Zone", dangerLevel: "medium", description: "", encounters: "" };
+          setZones(prev => [...prev, newZone]);
+          setEditingItem({ kind: "zone", id: newZone.id });
+          setMode("view");
+        }
       }
       setDrawing(null);
     }
@@ -613,18 +650,17 @@ function MapCanvas({ mapId, mapName }) {
 
   const updatePin  = (id, patch) => setPins(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
   const updateZone = (id, patch) => setZones(prev => prev.map(z => z.id === id ? { ...z, ...patch } : z));
-  const deletePin  = (id) => { setPins(prev => prev.filter(p => p.id !== id)); setEditingItem(null); setSelectedId(null); };
-  const deleteZone = (id) => { setZones(prev => prev.filter(z => z.id !== id)); setEditingItem(null); setSelectedId(null); };
+  const deletePin  = (id) => { pushToHistory(); setPins(prev => prev.filter(p => p.id !== id)); setEditingItem(null); setSelectedId(null); };
+  const deleteZone = (id) => { pushToHistory(); setZones(prev => prev.filter(z => z.id !== id)); setEditingItem(null); setSelectedId(null); };
 
   const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
 
-  const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab" }[mode];
+  const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", brush: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab" }[mode] || "cursor-default";
 
   if (!loaded) return <div className="splash">Unfurling the chart…</div>;
 
   return (
     <div className="w-full h-full relative overflow-hidden flex">
-      {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleMapUpload}
              style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
              aria-hidden="true" tabIndex={-1} />
@@ -639,9 +675,7 @@ function MapCanvas({ mapId, mapName }) {
                 <Compass size={18} style={{ color: "#5c4030" }} />
                 <h1 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 20, letterSpacing: "0.04em" }}>{mapName}</h1>
               </div>
-              <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>
-                A cartographer's ledger of perils &amp; promises
-              </p>
+              <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>A cartographer's ledger of perils &amp; promises</p>
             </div>
 
             <div className="overflow-y-auto flex-1 px-4 py-3">
@@ -654,15 +688,16 @@ function MapCanvas({ mapId, mapName }) {
                 <div className="space-y-2">
                   {zones.length > 0 && (
                     <div className="mb-3">
-                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
-                        Hot Zones · {zones.length}
-                      </h3>
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Hot Zones · {zones.length}</h3>
                       {zones.map(z => (
                         <button key={z.id} onClick={() => { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); }}
                                 className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5"
                                 style={{ border: `1.5px solid ${DANGER_LEVELS[z.dangerLevel].stroke}`, backgroundColor: DANGER_LEVELS[z.dangerLevel].fill }}>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{z.name}</span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {z.type === "path" ? <Brush size={11} style={{ color: DANGER_LEVELS[z.dangerLevel].stroke, flexShrink: 0 }} /> : <Crosshair size={11} style={{ color: DANGER_LEVELS[z.dangerLevel].stroke, flexShrink: 0 }} />}
+                              <span className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{z.name}</span>
+                            </div>
                             <span className="text-xs uppercase tracking-wider whitespace-nowrap" style={{ color: DANGER_LEVELS[z.dangerLevel].stroke, fontWeight: 600 }}>{DANGER_LEVELS[z.dangerLevel].label}</span>
                           </div>
                         </button>
@@ -671,9 +706,7 @@ function MapCanvas({ mapId, mapName }) {
                   )}
                   {pins.length > 0 && (
                     <div>
-                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
-                        Pins · {pins.length}
-                      </h3>
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Pins · {pins.length}</h3>
                       {pins.map(p => {
                         const T = PIN_TYPES[p.type] || PIN_TYPES.quest;
                         const Ico = T.icon;
@@ -681,10 +714,7 @@ function MapCanvas({ mapId, mapName }) {
                           <button key={p.id} onClick={() => { setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); }}
                                   className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5 flex items-center gap-2.5"
                                   style={{ backgroundColor: "rgba(255, 250, 235, 0.6)", border: `1px solid ${T.color}66` }}>
-                            <span className="flex items-center justify-center rounded-full flex-shrink-0"
-                                  style={{ width: 24, height: 24, backgroundColor: T.color, color: "#f4e8d0" }}>
-                              <Ico size={12} />
-                            </span>
+                            <span className="flex items-center justify-center rounded-full flex-shrink-0" style={{ width: 24, height: 24, backgroundColor: T.color, color: "#f4e8d0" }}><Ico size={12} /></span>
                             <div className="min-w-0 flex-1">
                               <div className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{p.title}</div>
                               <div className="text-xs uppercase tracking-wider" style={{ color: T.color, opacity: 0.85 }}>{T.label}</div>
@@ -698,7 +728,7 @@ function MapCanvas({ mapId, mapName }) {
               )}
             </div>
 
-            {/* Snapshots panel */}
+            {/* Snapshots */}
             <div className="border-t" style={{ borderColor: "#8b6f47" }}>
               <button onClick={() => setSnapshotsOpen(o => !o)}
                       className="w-full flex items-center justify-between px-4 py-2.5 text-xs uppercase tracking-widest"
@@ -714,22 +744,21 @@ function MapCanvas({ mapId, mapName }) {
                     <Camera size={12} />
                     {snapshotStatus === "saving" ? "Saving…" : snapshotStatus === "saved" ? "✓ Saved" : "Take Snapshot"}
                   </button>
-                  {snapshots.length === 0 ? (
-                    <p className="text-xs text-center italic py-1" style={{ color: "#8b6f47" }}>No snapshots yet.</p>
-                  ) : (
-                    <div className="space-y-1 max-h-48 overflow-y-auto">
-                      {[...snapshots].reverse().map(snap => (
-                        <div key={snap.id} className="flex items-center gap-1 rounded px-2 py-1" style={{ backgroundColor: "rgba(255,250,235,0.5)", border: "1px solid #c4a86488" }}>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", color: "#2a1810" }}>{snap.label}</div>
-                            <div className="text-xs" style={{ color: "#8b6f47" }}>{new Date(snap.ts * 1000).toLocaleDateString()}</div>
+                  {snapshots.length === 0
+                    ? <p className="text-xs text-center italic py-1" style={{ color: "#8b6f47" }}>No snapshots yet.</p>
+                    : <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {[...snapshots].reverse().map(snap => (
+                          <div key={snap.id} className="flex items-center gap-1 rounded px-2 py-1" style={{ backgroundColor: "rgba(255,250,235,0.5)", border: "1px solid #c4a86488" }}>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", color: "#2a1810" }}>{snap.label}</div>
+                              <div className="text-xs" style={{ color: "#8b6f47" }}>{new Date(snap.ts * 1000).toLocaleDateString()}</div>
+                            </div>
+                            <button onClick={() => handleRestoreSnapshot(snap)} title="Restore" className="p-1 rounded hover:bg-black/10" style={{ color: "#4a6741" }}><RotateCcw size={12} /></button>
+                            <button onClick={() => handleDeleteSnapshot(snap)} title="Delete" className="p-1 rounded hover:bg-black/10" style={{ color: "#8b1a1a" }}><Trash2 size={12} /></button>
                           </div>
-                          <button onClick={() => handleRestoreSnapshot(snap)} title="Restore" className="p-1 rounded hover:bg-black/10" style={{ color: "#4a6741" }}><RotateCcw size={12} /></button>
-                          <button onClick={() => handleDeleteSnapshot(snap)} title="Delete" className="p-1 rounded hover:bg-black/10" style={{ color: "#8b1a1a" }}><Trash2 size={12} /></button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                  }
                 </div>
               )}
             </div>
@@ -744,8 +773,7 @@ function MapCanvas({ mapId, mapName }) {
         )}
         <button onClick={() => setSidebarOpen(s => !s)}
                 className="absolute top-4 -right-3 w-6 h-12 rounded-r flex items-center justify-center"
-                style={{ backgroundColor: "#5c4030", color: "#f4e8d0", zIndex: 30 }}
-                title={sidebarOpen ? "Hide ledger" : "Show ledger"}>
+                style={{ backgroundColor: "#5c4030", color: "#f4e8d0", zIndex: 30 }}>
           {sidebarOpen ? "‹" : "›"}
         </button>
       </aside>
@@ -756,37 +784,45 @@ function MapCanvas({ mapId, mapName }) {
           <UploadGate onPickFile={triggerFileSelect} error={storageError} />
         ) : (
           <>
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 px-2 py-1.5 rounded shadow-lg"
+            {/* Toolbar */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2 py-1.5 rounded shadow-lg"
                  style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
-              <ToolbarBtn active={mode === "view"} onClick={() => setMode("view")} icon={Eye} label="Read" />
-              <ToolbarBtn active={mode === "pan"}  onClick={() => setMode("pan")}  icon={Move} label="Pan" />
-              <div className="w-px h-6 mx-1" style={{ backgroundColor: "#8b6f47" }} />
-              <ToolbarBtn active={mode === "pin"}  onClick={() => setMode("pin")}  icon={MapPin} label="Place Pin" />
-              <ToolbarBtn active={mode === "zone"} onClick={() => setMode("zone")} icon={Crosshair} label="Mark Zone" />
-              <div className="w-px h-6 mx-1" style={{ backgroundColor: "#8b6f47" }} />
-              <ToolbarBtn onClick={() => setZoom(z => Math.min(6, z * 1.25))} icon={ZoomIn} label="" />
+              <ToolbarBtn active={mode === "view"}  onClick={() => setMode("view")}  icon={Eye}        label="Read" />
+              <ToolbarBtn active={mode === "pan"}   onClick={() => setMode("pan")}   icon={Move}       label="Pan" />
+              <Sep />
+              <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}     label="Pin" />
+              <ToolbarBtn active={mode === "zone"}  onClick={() => setMode("zone")}  icon={Crosshair}  label="Circle" />
+              <ToolbarBtn active={mode === "brush"} onClick={() => setMode("brush")} icon={Brush}      label="Brush" />
+              <Sep />
+              <ToolbarBtn disabled={undoStack.length === 0} onClick={undo} icon={Undo2} label="Undo" title={`Undo (${undoStack.length})`} />
+              <ToolbarBtn disabled={redoStack.length === 0} onClick={redo} icon={Redo2} label="Redo" />
+              <Sep />
+              <ToolbarBtn onClick={() => setZoom(z => Math.min(6, z * 1.25))} icon={ZoomIn}  label="" />
               <ToolbarBtn onClick={() => setZoom(z => Math.max(0.5, z / 1.25))} icon={ZoomOut} label="" />
               <button onClick={resetView} className="px-2.5 py-1.5 text-xs uppercase tracking-wider rounded" style={{ color: "#f4e8d0" }}>Reset</button>
             </div>
 
+            {/* Mode hint */}
             {mode !== "view" && (
               <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded text-sm"
                    style={{ backgroundColor: "rgba(244, 232, 208, 0.95)", border: "1px dashed #5c4030", fontFamily: "'IM Fell English', serif", fontStyle: "italic" }}>
-                {mode === "pin"  && "Click anywhere on the chart to place a pin."}
-                {mode === "zone" && "Click and drag to inscribe a hot zone."}
-                {mode === "pan"  && "Drag to reposition. Pinch or scroll to zoom."}
+                {mode === "pin"   && "Click anywhere on the chart to place a pin."}
+                {mode === "zone"  && "Click and drag to inscribe a circular hot zone."}
+                {mode === "brush" && "Click and drag to paint a coastline or route."}
+                {mode === "pan"   && "Drag to reposition. Pinch or scroll to zoom."}
               </div>
             )}
 
-            <div className="absolute top-4 right-4 z-20 flex flex-col gap-1.5">
+            {/* Replace chart button */}
+            <div className="absolute top-4 right-4 z-20">
               <button onClick={triggerFileSelect}
                       className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
                       style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
-                <Upload size={14} />
-                <span className="hidden sm:inline">Replace Chart</span>
+                <Upload size={14} /><span className="hidden sm:inline">Replace Chart</span>
               </button>
             </div>
 
+            {/* Map canvas */}
             <div ref={wrapRef}
                  className={`w-full h-full overflow-hidden ${cursorClass}`}
                  style={{ touchAction: "none" }}
@@ -808,8 +844,11 @@ function MapCanvas({ mapId, mapName }) {
                          e.target.parentElement.style.height = h + "px";
                        }} />
 
+                  {/* SVG overlay: zones */}
                   <svg className="absolute inset-0 pointer-events-none" style={{ width: "100%", height: "100%" }} viewBox="0 0 1 1" preserveAspectRatio="none">
-                    {zones.map(z => {
+
+                    {/* Circle zones */}
+                    {zones.filter(z => !z.type || z.type === "circle").map(z => {
                       const D = DANGER_LEVELS[z.dangerLevel];
                       const sel = selectedId === z.id;
                       return (
@@ -822,13 +861,47 @@ function MapCanvas({ mapId, mapName }) {
                         </g>
                       );
                     })}
-                    {drawing && (
+
+                    {/* Path (brush) zones */}
+                    {zones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
+                      const D = DANGER_LEVELS[z.dangerLevel];
+                      const sel = selectedId === z.id;
+                      const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
+                      return (
+                        <g key={z.id} className="pointer-events-auto" style={{ cursor: "pointer" }}
+                           onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
+                          {/* Wide invisible hit area */}
+                          <polyline points={pts} fill="none" stroke="transparent" strokeWidth="0.04" strokeLinecap="round" />
+                          {/* Highlighter body */}
+                          <polyline points={pts} fill="none" stroke={D.stroke}
+                                    strokeOpacity={sel ? 0.6 : 0.35} strokeWidth="0.022"
+                                    strokeLinecap="round" strokeLinejoin="round" />
+                          {/* Crisp outline */}
+                          <polyline points={pts} fill="none" stroke={D.stroke}
+                                    strokeWidth={sel ? 0.004 : 0.0025} strokeLinecap="round" strokeLinejoin="round"
+                                    strokeDasharray={sel ? "0.012 0.008" : undefined} vectorEffect="non-scaling-stroke">
+                            {sel && <animate attributeName="stroke-dashoffset" values="0;0.04" dur="2s" repeatCount="indefinite" />}
+                          </polyline>
+                        </g>
+                      );
+                    })}
+
+                    {/* In-progress circle */}
+                    {drawing && !drawing.type && (
                       <circle cx={drawing.x} cy={drawing.y} r={drawing.radius}
                               fill="rgba(196, 100, 30, 0.2)" stroke="#5c4030" strokeWidth="0.003" strokeDasharray="0.01 0.008" />
                     )}
+
+                    {/* In-progress brush stroke */}
+                    {drawing?.type === "path" && drawing.points?.length >= 2 && (
+                      <polyline points={drawing.points.map(p => `${p.x},${p.y}`).join(" ")}
+                                fill="none" stroke="#5c4030" strokeWidth="0.022" strokeOpacity="0.4"
+                                strokeLinecap="round" strokeLinejoin="round" />
+                    )}
                   </svg>
 
-                  {zones.map(z => {
+                  {/* Circle zone labels */}
+                  {zones.filter(z => !z.type || z.type === "circle").map(z => {
                     const D = DANGER_LEVELS[z.dangerLevel];
                     return (
                       <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
@@ -836,6 +909,17 @@ function MapCanvas({ mapId, mapName }) {
                     );
                   })}
 
+                  {/* Path zone labels — positioned at the midpoint of the stroke */}
+                  {zones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
+                    const D = DANGER_LEVELS[z.dangerLevel];
+                    const mid = z.points[Math.floor(z.points.length / 2)];
+                    return (
+                      <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
+                           style={{ left: `${mid.x * 100}%`, top: `${mid.y * 100}%`, transform: "translate(-50%, -200%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, textShadow: "0 0 4px rgba(244, 232, 208, 0.9), 0 0 4px rgba(244, 232, 208, 0.9)", fontSize: 11 / zoom + "px", letterSpacing: "0.05em", fontWeight: 600, whiteSpace: "nowrap" }}>{z.name}</div>
+                    );
+                  })}
+
+                  {/* Pins */}
                   {pins.map(p => {
                     const T = PIN_TYPES[p.type] || PIN_TYPES.quest;
                     const Ico = T.icon;
@@ -855,9 +939,7 @@ function MapCanvas({ mapId, mapName }) {
                           <div className="relative" style={{ marginTop: -8, color: T.color }}><Ico size={13} strokeWidth={2.5} /></div>
                         </div>
                         <div className="absolute left-1/2 -translate-x-1/2 -top-7 px-2 py-0.5 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none"
-                             style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", fontFamily: "'IM Fell English', serif", border: "1px solid #8b6f47" }}>
-                          {p.title}
-                        </div>
+                             style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", fontFamily: "'IM Fell English', serif", border: "1px solid #8b6f47" }}>{p.title}</div>
                       </button>
                     );
                   })}
@@ -865,29 +947,23 @@ function MapCanvas({ mapId, mapName }) {
               </div>
             </div>
 
-            <div className="absolute bottom-4 right-4 z-10 pointer-events-none opacity-50">
-              <CompassRose size={70} />
-            </div>
+            <div className="absolute bottom-4 right-4 z-10 pointer-events-none opacity-50"><CompassRose size={70} /></div>
           </>
         )}
       </main>
 
       {editingObj && (
-        <EditPanel
-          item={editingObj}
-          kind={editingItem.kind}
-          onClose={() => { setEditingItem(null); setSelectedId(null); }}
-          onUpdatePin={(patch) => updatePin(editingObj.id, patch)}
-          onUpdateZone={(patch) => updateZone(editingObj.id, patch)}
-          onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)}
-        />
+        <EditPanel item={editingObj} kind={editingItem.kind}
+                   onClose={() => { setEditingItem(null); setSelectedId(null); }}
+                   onUpdatePin={(patch) => updatePin(editingObj.id, patch)}
+                   onUpdateZone={(patch) => updateZone(editingObj.id, patch)}
+                   onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)} />
       )}
 
       {storageError && map && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 px-3 py-2 rounded text-sm flex items-center gap-2"
              style={{ backgroundColor: "rgba(139, 26, 26, 0.95)", color: "#f4e8d0", border: "1px solid #5c0808" }}>
-          <AlertTriangle size={16} />
-          <span>{storageError}</span>
+          <AlertTriangle size={16} /><span>{storageError}</span>
           <button onClick={() => setStorageError(null)} className="ml-2 opacity-80 hover:opacity-100"><X size={14} /></button>
         </div>
       )}
@@ -896,14 +972,16 @@ function MapCanvas({ mapId, mapName }) {
 }
 
 // ============================================================
-//  Shared UI components
+//  Shared UI
 // ============================================================
-function ToolbarBtn({ active, onClick, icon: Icon, label }) {
+const Sep = () => <div className="w-px h-6 mx-0.5" style={{ backgroundColor: "#8b6f47" }} />;
+
+function ToolbarBtn({ active, disabled, onClick, icon: Icon, label, title: titleProp }) {
   return (
-    <button onClick={onClick}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
-            style={{ color: active ? "#2a1810" : "#f4e8d0", backgroundColor: active ? "#e8d4a8" : "transparent", fontFamily: "'IM Fell English SC', serif" }}
-            title={label}>
+    <button onClick={disabled ? undefined : onClick} disabled={disabled}
+            title={titleProp || label}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs uppercase tracking-wider"
+            style={{ color: disabled ? "#5c4030" : (active ? "#2a1810" : "#f4e8d0"), backgroundColor: active ? "#e8d4a8" : "transparent", opacity: disabled ? 0.35 : 1, fontFamily: "'IM Fell English SC', serif", cursor: disabled ? "default" : "pointer" }}>
       <Icon size={14} />
       {label && <span className="hidden sm:inline">{label}</span>}
     </button>
@@ -922,9 +1000,7 @@ function UploadGate({ onPickFile, error }) {
         ))}
         <Compass size={48} className="mx-auto mb-3" style={{ color: "#5c4030" }} />
         <h2 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 28, letterSpacing: "0.04em" }}>Chart Awaits</h2>
-        <p className="mt-2 mb-5" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", color: "#5c4030" }}>
-          Begin by hoisting your map aboard.
-        </p>
+        <p className="mt-2 mb-5" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", color: "#5c4030" }}>Begin by hoisting your map aboard.</p>
         <button onClick={onPickFile}
                 className="inline-flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded"
                 style={{ backgroundColor: "#2a1810", color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em", border: "1px solid #8b6f47" }}>
@@ -932,8 +1008,7 @@ function UploadGate({ onPickFile, error }) {
         </button>
         {error && (
           <div className="mt-4 px-3 py-2 text-sm rounded flex items-start gap-2" style={{ backgroundColor: "rgba(139, 26, 26, 0.12)", color: "#5c1a1a", border: "1px solid #8b1a1a" }}>
-            <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-            <span>{error}</span>
+            <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" /><span>{error}</span>
           </div>
         )}
       </div>
@@ -948,7 +1023,7 @@ function EditPanel({ item, kind, onClose, onUpdatePin, onUpdateZone, onDelete })
       <div className="px-5 py-4 flex items-center justify-between border-b sticky top-0"
            style={{ borderColor: "#8b6f47", backgroundColor: "rgba(244, 232, 208, 0.98)", backdropFilter: "blur(4px)" }}>
         <h3 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 18, color: "#2a1810", letterSpacing: "0.04em" }}>
-          {kind === "pin" ? "Pin Inscription" : "Hot Zone Decree"}
+          {kind === "pin" ? "Pin Inscription" : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
         </h3>
         <button onClick={onClose} className="p-1 rounded hover:bg-black/10"><X size={20} style={{ color: "#5c4030" }} /></button>
       </div>
@@ -979,33 +1054,23 @@ const inputStyle = () => ({
 function PinEditor({ item, onUpdate }) {
   return (
     <>
-      <div>
-        <FieldLabel>Title</FieldLabel>
-        <input value={item.title} onChange={(e) => onUpdate({ title: e.target.value })} style={inputStyle()} placeholder="What lies here?" />
-      </div>
+      <div><FieldLabel>Title</FieldLabel><input value={item.title} onChange={(e) => onUpdate({ title: e.target.value })} style={inputStyle()} placeholder="What lies here?" /></div>
       <div>
         <FieldLabel>Type</FieldLabel>
         <div className="grid grid-cols-4 gap-1.5">
           {Object.entries(PIN_TYPES).map(([key, t]) => {
-            const Icon = t.icon;
-            const active = item.type === key;
+            const Icon = t.icon; const active = item.type === key;
             return (
               <button key={key} onClick={() => onUpdate({ type: key })}
                       className="flex flex-col items-center gap-1 py-2 rounded"
                       style={{ backgroundColor: active ? t.color : "rgba(255, 250, 235, 0.6)", color: active ? "#f4e8d0" : t.color, border: `1px solid ${active ? t.color : t.color + "55"}` }}>
-                <Icon size={16} />
-                <span className="text-[10px] uppercase tracking-wider">{t.label}</span>
+                <Icon size={16} /><span className="text-[10px] uppercase tracking-wider">{t.label}</span>
               </button>
             );
           })}
         </div>
       </div>
-      <div>
-        <FieldLabel>Notes</FieldLabel>
-        <textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })}
-                  style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }}
-                  placeholder="The whispers say…" />
-      </div>
+      <div><FieldLabel>Notes</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder="The whispers say…" /></div>
     </>
   );
 }
@@ -1013,10 +1078,7 @@ function PinEditor({ item, onUpdate }) {
 function ZoneEditor({ item, onUpdate }) {
   return (
     <>
-      <div>
-        <FieldLabel>Name</FieldLabel>
-        <input value={item.name} onChange={(e) => onUpdate({ name: e.target.value })} style={inputStyle()} placeholder="What is this region called?" />
-      </div>
+      <div><FieldLabel>{item.type === "path" ? "Coastline Name" : "Zone Name"}</FieldLabel><input value={item.name} onChange={(e) => onUpdate({ name: e.target.value })} style={inputStyle()} placeholder="What is this region called?" /></div>
       <div>
         <FieldLabel>Danger Level</FieldLabel>
         <div className="grid grid-cols-5 gap-1">
@@ -1033,18 +1095,8 @@ function ZoneEditor({ item, onUpdate }) {
         </div>
         <p className="mt-2 text-xs italic" style={{ color: "#5c4030" }}>{DANGER_LEVELS[item.dangerLevel].desc}</p>
       </div>
-      <div>
-        <FieldLabel>Description</FieldLabel>
-        <textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })}
-                  style={{ ...inputStyle(), minHeight: 80, resize: "vertical", lineHeight: 1.5 }}
-                  placeholder="What characterizes this region?" />
-      </div>
-      <div>
-        <FieldLabel>Random Encounter Table</FieldLabel>
-        <textarea value={item.encounters} onChange={(e) => onUpdate({ encounters: e.target.value })}
-                  style={{ ...inputStyle(), minHeight: 160, resize: "vertical", lineHeight: 1.5, fontFamily: "'IM Fell English', serif" }}
-                  placeholder={"1-2: A merrow ambush from the kelp.\n3-4: Caustrix raiders demand toll.\n5: Bryce Eel coiling beneath the keel.\n6: A waterlogged, whispering corpse."} />
-      </div>
+      <div><FieldLabel>Description</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 80, resize: "vertical", lineHeight: 1.5 }} placeholder="What characterizes this region?" /></div>
+      <div><FieldLabel>Random Encounter Table</FieldLabel><textarea value={item.encounters} onChange={(e) => onUpdate({ encounters: e.target.value })} style={{ ...inputStyle(), minHeight: 160, resize: "vertical", lineHeight: 1.5, fontFamily: "'IM Fell English', serif" }} placeholder={"1-2: A merrow ambush from the kelp.\n3-4: Caustrix raiders demand toll.\n5: Bryce Eel coiling beneath the keel.\n6: A waterlogged, whispering corpse."} /></div>
     </>
   );
 }
