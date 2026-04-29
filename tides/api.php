@@ -92,7 +92,7 @@ function read_meta(string $mapId): array {
     if (!file_exists($f)) return ['pins' => [], 'zones' => []];
     $d = json_decode((string)file_get_contents($f), true);
     if (!is_array($d)) return ['pins' => [], 'zones' => []];
-    return ['pins' => array_values($d['pins'] ?? []), 'zones' => array_values($d['zones'] ?? [])];
+    return ['pins' => array_values($d['pins'] ?? []), 'zones' => array_values($d['zones'] ?? []), 'cities' => array_values($d['cities'] ?? [])];
 }
 
 // ===== Snapshots =====
@@ -247,7 +247,7 @@ switch ($action) {
         $body = json_decode(file_get_contents('php://input') ?: '', true);
         if (!is_array($body)) send_json(['error' => 'Invalid JSON body'], 400);
         ensure_map_dir($mapId);
-        $payload = ['pins' => array_values($body['pins'] ?? []), 'zones' => array_values($body['zones'] ?? [])];
+        $payload = ['pins' => array_values($body['pins'] ?? []), 'zones' => array_values($body['zones'] ?? []), 'cities' => array_values($body['cities'] ?? [])];
         $tmp = meta_file($mapId) . '.tmp';
         if (file_put_contents($tmp, json_encode($payload, JSON_UNESCAPED_SLASHES)) === false)
             send_json(['error' => 'Could not write meta'], 500);
