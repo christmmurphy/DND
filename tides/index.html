@@ -1201,8 +1201,7 @@ function ZoneEditor({ item, onUpdate }) {
         </div>
         <p className="mt-2 text-xs italic" style={{ color: "#5c4030" }}>{DANGER_LEVELS[item.dangerLevel].desc}</p>
       </div>
-      <div><FieldLabel>Description</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 80, resize: "vertical", lineHeight: 1.5 }} placeholder="What characterizes this region?" /></div>
-      <div><FieldLabel>Random Encounter Table</FieldLabel><textarea value={item.encounters} onChange={(e) => onUpdate({ encounters: e.target.value })} style={{ ...inputStyle(), minHeight: 160, resize: "vertical", lineHeight: 1.5, fontFamily: "'IM Fell English', serif" }} placeholder={"1-2: A merrow ambush from the kelp.\n3-4: Caustrix raiders demand toll.\n5: Bryce Eel coiling beneath the keel.\n6: A waterlogged, whispering corpse."} /></div>
+      <div><FieldLabel>Description</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder="What characterizes this region?" /></div>
     </>
   );
 }
