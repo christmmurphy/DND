@@ -19,7 +19,7 @@ A `data/` folder will be created automatically by `api.php` on first request. It
 2. **Create a folder** like `menagerie` (or any name you want — that becomes the URL path).
 3. **Upload `index.html` and `api.php`** into that folder.
 4. **Visit the URL**, e.g.:
-   `https://christhehuman.synology.me/menagerie/`
+   `https://your-nas.synology.me/menagerie/`
 5. The first time you load it, `api.php` creates `data/` next to itself and writes the `.htaccess` guards. If you don't see the upload screen, see "Troubleshooting" below.
 
 That's it. Click **Upload Chart**, pick your map image, and start placing pins.
