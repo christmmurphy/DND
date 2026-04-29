@@ -203,16 +203,18 @@ const Trident   = (p) => <Svg {...p}><line x1="12" y1="9" x2="12" y2="22"/><path
 // ============================================================
 //  Constants
 // ============================================================
+// Environmental-palette pins (earthy, warm — echo the danger level tones)
+// Faction-palette pins (heraldic, cool — echo the faction colour swatches)
 const PIN_TYPES = {
-  note:     { label: "Note",    icon: Scroll,    color: "#8b6f1a", glow: "#d4aa30" },
-  npc:      { label: "NPC",     icon: Users,     color: "#3a6b3a", glow: "#6aaa60" },
-  enemy:    { label: "Enemy",   icon: Skull,     color: "#8b1a1a", glow: "#d93838" },
-  treasure: { label: "Treasure",icon: Gem,       color: "#9a7b1f", glow: "#d4a82a" },
-  magic:    { label: "Magic",   icon: Wand2,     color: "#6b1a9b", glow: "#b060e0" },
-  fey:      { label: "Fey",     icon: Sparkles,  color: "#1a7a6a", glow: "#3abba0" },
-  devil:    { label: "Devil",   icon: Trident,   color: "#7a1010", glow: "#d02020" },
-  combat:   { label: "Combat",  icon: Swords,    color: "#5c2317", glow: "#9a3828" },
-  danger:   { label: "Danger",  icon: AlertTriangle, color: "#b82020", glow: "#e04040" },
+  note:     { label: "Note",    icon: Scroll,    color: "#8b6f1a", glow: "#d4aa30" }, // parchment gold     — environmental
+  enemy:    { label: "Enemy",   icon: Skull,     color: "#8b1a1a", glow: "#d93838" }, // blood red          — environmental
+  treasure: { label: "Treasure",icon: Gem,       color: "#c49a10", glow: "#f0cc30" }, // bright gold        — environmental
+  combat:   { label: "Combat",  icon: Swords,    color: "#7a3010", glow: "#c05828" }, // terracotta         — environmental
+  danger:   { label: "Danger",  icon: AlertTriangle, color: "#cc2020", glow: "#ff4040" }, // vivid warning red — environmental
+  npc:      { label: "NPC",     icon: Users,     color: "#1a5c8b", glow: "#3a90d0" }, // cobalt blue        — faction
+  magic:    { label: "Magic",   icon: Wand2,     color: "#6b1a8b", glow: "#b060e0" }, // imperial purple    — faction
+  fey:      { label: "Fey",     icon: Sparkles,  color: "#0a7a6b", glow: "#20c4a8" }, // jade teal          — faction
+  devil:    { label: "Devil",   icon: Trident,   color: "#4a0a8b", glow: "#8040d0" }, // midnight violet    — faction
 };
 
 const DANGER_LEVELS = {
@@ -242,7 +244,18 @@ function getPinType(p) {
   return PIN_TYPES[p.type] || PIN_TYPES.note;
 }
 
-const FACTION_COLORS = ["#8b1a1a","#1a3a8b","#1a6b1a","#8b6b1a","#6b1a8b","#1a6b6b","#8b3a1a","#4a4a4a"];
+const FACTION_COLORS = [
+  "#1a2d8b", // royal blue
+  "#5c1a8b", // imperial purple
+  "#8b1a5c", // deep rose
+  "#0a5c7a", // ocean teal
+  "#4a0a8b", // midnight violet
+  "#1a5c8b", // cobalt
+  "#8b0a4a", // magenta
+  "#003c5c", // dark teal
+  "#2a1a6b", // indigo
+  "#6b006b", // dark orchid
+];
 
 function getZoneColors(z) {
   if (z.zoneKind === "faction") {
