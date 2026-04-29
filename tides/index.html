@@ -58,6 +58,15 @@
     .pin-marker:hover, .pin-marker.pin-selected, .pin-marker.pin-moving { opacity: 1; }
     .pin-pulse { animation-play-state: paused; opacity: 0; transition: opacity 0.3s; }
     .pin-marker:hover .pin-pulse, .pin-marker.pin-selected .pin-pulse, .pin-marker.pin-moving .pin-pulse { animation-play-state: running; opacity: 1; }
+    @keyframes labelPulse {
+      0%   { scale: 1; }
+      35%  { scale: 1.45; }
+      70%  { scale: 1.18; }
+      100% { scale: 1.22; }
+    }
+    .zone-label { }
+    .zone-label:hover { opacity: 0.9; }
+    .zone-label-selected { animation: labelPulse 0.38s ease-out forwards; box-shadow: 0 1px 8px rgba(0,0,0,0.3); }
     .pin-tooltip-enter { opacity: 0; transform: translateY(6px); }
     .pin-tooltip-enter-active { opacity: 1; transform: translateY(0); transition: opacity 0.2s, transform 0.2s; }
     .splash {
@@ -468,6 +477,9 @@ function MapCanvas({ mapId, mapName }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hiddenTypes, setHiddenTypes] = useState(new Set());
   const [hiddenZoneKinds, setHiddenZoneKinds] = useState(new Set());
+  const [hoveredZoneId, setHoveredZoneId] = useState(null);
+  const [showReplaceLabel, setShowReplaceLabel] = useState(false);
+  const replaceLabelTimer = useRef(null);
 
   const addToast = useCallback((message, type = "success") => {
     const id = Date.now() + Math.random();
@@ -480,6 +492,14 @@ function MapCanvas({ mapId, mapName }) {
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
+
+  useEffect(() => {
+    if (!map) return;
+    setShowReplaceLabel(true);
+    clearTimeout(replaceLabelTimer.current);
+    replaceLabelTimer.current = setTimeout(() => setShowReplaceLabel(false), 3000);
+    return () => clearTimeout(replaceLabelTimer.current);
+  }, [map]);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -1054,11 +1074,12 @@ function MapCanvas({ mapId, mapName }) {
             )}
 
             {/* Replace chart button */}
-            <div className="absolute top-4 right-4 z-20">
+            <div className="absolute top-4 right-4 z-20 group/replace">
               <button onClick={triggerFileSelect}
-                      className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
-                      style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
-                <Upload size={14} /><span className="hidden sm:inline">Replace Chart</span>
+                      className="cursor-pointer flex items-center gap-1.5 py-1.5 rounded text-xs uppercase tracking-wider overflow-hidden"
+                      style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif", paddingLeft: "0.625rem", paddingRight: "0.625rem", transition: "max-width 0.45s ease", maxWidth: showReplaceLabel ? "12rem" : "2.5rem" }}>
+                <Upload size={14} style={{ flexShrink: 0 }} />
+                <span style={{ overflow: "hidden", whiteSpace: "nowrap", maxWidth: showReplaceLabel ? "8rem" : "0", opacity: showReplaceLabel ? 1 : 0, transition: "max-width 0.4s ease, opacity 0.3s ease" }}>Replace Chart</span>
               </button>
             </div>
 
@@ -1117,8 +1138,9 @@ function MapCanvas({ mapId, mapName }) {
                     {visibleZones.filter(z => !z.type || z.type === "circle").map(z => {
                       const D = getZoneColors(z);
                       const sel = selectedId === z.id;
+                      const highlighted = sel || hoveredZoneId === z.id;
                       return (
-                        <g key={z.id} className={`zone-circle pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
+                        <g key={z.id} className={`zone-circle pointer-events-auto${highlighted ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view" || mode === "movepin") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
                           <circle cx={z.x} cy={z.y} r={z.radius} fill={D.fill} stroke={D.stroke}
                                   strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke"
@@ -1133,9 +1155,10 @@ function MapCanvas({ mapId, mapName }) {
                     {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
                       const D = getZoneColors(z);
                       const sel = selectedId === z.id;
+                      const highlighted = sel || hoveredZoneId === z.id;
                       const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
                       return (
-                        <g key={z.id} className={`zone-path pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
+                        <g key={z.id} className={`zone-path pointer-events-auto${highlighted ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view" || mode === "movepin") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
                           <polyline points={pts} fill="none" stroke="transparent" strokeWidth="0.04" strokeLinecap="round" />
                           <polyline points={pts} fill="none" stroke={D.stroke}
@@ -1190,19 +1213,30 @@ function MapCanvas({ mapId, mapName }) {
                   {/* Circle zone labels */}
                   {visibleZones.filter(z => !z.type || z.type === "circle").map(z => {
                     const D = getZoneColors(z);
+                    const sel = selectedId === z.id;
+                    const baseSize = Math.max(9, Math.min(14, z.radius * 130)) / zoom;
                     return (
-                      <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
-                           style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, transform: "translate(-50%, -50%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: Math.max(9, Math.min(14, z.radius * 130)) / zoom + "px", letterSpacing: "0.05em", fontWeight: 700, maxWidth: `${z.radius * 180}%`, lineHeight: 1.1, backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2 }}>{z.name}</div>
+                      <div key={"label-" + z.id}
+                           className={`absolute text-center zone-label${sel ? " zone-label-selected" : ""}`}
+                           onMouseEnter={() => setHoveredZoneId(z.id)}
+                           onMouseLeave={() => setHoveredZoneId(null)}
+                           onClick={() => { if (mode === "view" || mode === "movepin") { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}
+                           style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, transform: "translate(-50%, -50%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: baseSize + "px", letterSpacing: "0.05em", fontWeight: 700, maxWidth: `${z.radius * 180}%`, lineHeight: 1.1, backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2, cursor: "pointer", zIndex: 12, transition: "transform 0.2s ease, font-size 0.2s ease" }}>{z.name}</div>
                     );
                   })}
 
                   {/* Path zone labels */}
                   {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
                     const D = getZoneColors(z);
+                    const sel = selectedId === z.id;
                     const mid = z.points[Math.floor(z.points.length / 2)];
                     return (
-                      <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
-                           style={{ left: `${mid.x * 100}%`, top: `${mid.y * 100}%`, transform: "translate(-50%, -200%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: 11 / zoom + "px", letterSpacing: "0.05em", fontWeight: 700, whiteSpace: "nowrap", backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2 }}>{z.name}</div>
+                      <div key={"label-" + z.id}
+                           className={`absolute text-center zone-label${sel ? " zone-label-selected" : ""}`}
+                           onMouseEnter={() => setHoveredZoneId(z.id)}
+                           onMouseLeave={() => setHoveredZoneId(null)}
+                           onClick={() => { if (mode === "view" || mode === "movepin") { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}
+                           style={{ left: `${mid.x * 100}%`, top: `${mid.y * 100}%`, transform: "translate(-50%, -200%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: 11 / zoom + "px", letterSpacing: "0.05em", fontWeight: 700, whiteSpace: "nowrap", backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2, cursor: "pointer", zIndex: 12, transition: "transform 0.2s ease, font-size 0.2s ease" }}>{z.name}</div>
                     );
                   })}
 
