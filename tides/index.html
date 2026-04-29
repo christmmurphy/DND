@@ -52,6 +52,8 @@
     .zone-path:hover polyline  { stroke-opacity: 0.75 !important; }
     .pin-marker { opacity: 0.62; transition: opacity 0.25s ease; }
     .pin-marker:hover, .pin-marker.pin-selected, .pin-marker.pin-moving { opacity: 1; }
+    .pin-marker .pin-hover-tip { display: none; }
+    .pin-marker:hover .pin-hover-tip { display: block; }
     .pin-tooltip-enter { opacity: 0; transform: translateY(6px); }
     .pin-tooltip-enter-active { opacity: 1; transform: translateY(0); transition: opacity 0.2s, transform 0.2s; }
     .splash {
@@ -65,6 +67,7 @@
   </style>
 </head>
 <body>
+  <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; window.scrollTo(0, 0);</script>
   <div id="root"><div class="splash">Unfurling the chart…</div></div>
 
   <script type="text/babel" data-presets="react">
@@ -188,6 +191,7 @@ const Shield    = (p) => <Svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8
 const Key       = (p) => <Svg {...p}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></Svg>;
 const Moon      = (p) => <Svg {...p}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></Svg>;
 const Gem       = (p) => <Svg {...p}><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></Svg>;
+const MouseIcon = (p) => <Svg {...p}><rect x="6" y="3" width="12" height="18" rx="6"/><line x1="12" x2="12" y1="7" y2="11"/></Svg>;
 
 // ============================================================
 //  Constants
@@ -241,10 +245,13 @@ function getZoneColors(z) {
 // ============================================================
 //  Root — manages maps list, active map, URL hash
 // ============================================================
+const getViewParam = () => new URLSearchParams(window.location.search).get("view") === "player" ? "player" : "dm";
+
 function App() {
   const [maps, setMaps]               = useState(null);
   const [activeMapId, setActiveMapId] = useState(null);
   const [globalError, setGlobalError] = useState(null);
+  const [viewMode, setViewMode]       = useState(getViewParam);
 
   useEffect(() => {
     (async () => {
@@ -335,9 +342,10 @@ function App() {
   return (
     <div className="w-full h-full flex flex-col" style={{ fontFamily: "'EB Garamond', Georgia, serif", background: `radial-gradient(ellipse at 20% 10%, #e8d4a8 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, #c9a875 0%, transparent 60%), radial-gradient(ellipse at 50% 50%, #d8c094 0%, #b8966a 100%)`, color: "#2a1810" }}>
       <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.15  0 0 0 0 0.1  0 0 0 0 0.05  0 0 0 0.18 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>")`, mixBlendMode: "multiply", opacity: 0.55, zIndex: 0 }} />
-      <MapTabBar maps={maps} activeMapId={activeMapId} onSelect={selectMap} onNew={handleNewMap} onRename={handleRenameMap} onDelete={handleDeleteMap} />
+      <MapTabBar maps={maps} activeMapId={activeMapId} onSelect={selectMap} onNew={handleNewMap} onRename={handleRenameMap} onDelete={handleDeleteMap}
+                 viewMode={viewMode} />
       <div className="flex-1 overflow-hidden relative" style={{ zIndex: 1 }}>
-        {activeMapId && <MapCanvas key={activeMapId} mapId={activeMapId} mapName={maps.find(m => m.id === activeMapId)?.name ?? ""} />}
+        {activeMapId && <MapCanvas key={activeMapId} mapId={activeMapId} mapName={maps.find(m => m.id === activeMapId)?.name ?? ""} viewMode={viewMode} onToggleView={() => setViewMode(v => v === "dm" ? "player" : "dm")} />}
       </div>
     </div>
   );
@@ -346,26 +354,30 @@ function App() {
 // ============================================================
 //  Tab bar
 // ============================================================
-function MapTabBar({ maps, activeMapId, onSelect, onNew, onRename, onDelete }) {
+function MapTabBar({ maps, activeMapId, onSelect, onNew, onRename, onDelete, viewMode }) {
+  const isDM = viewMode === "dm";
   return (
     <div className="flex items-stretch overflow-x-auto tab-scroll flex-shrink-0"
-         style={{ borderBottom: "2px solid #5c4030", backgroundColor: "rgba(42, 24, 16, 0.93)", minHeight: 38, zIndex: 10 }}>
+         style={{ borderBottom: `2px solid ${isDM ? "#5c4030" : "#2a4a6b"}`, backgroundColor: "rgba(42, 24, 16, 0.93)", minHeight: 38, zIndex: 10 }}>
       {maps.map(m => (
         <MapTab key={m.id} map={m} active={m.id === activeMapId}
                 onSelect={() => onSelect(m.id)}
                 onRename={() => onRename(m.id, m.name)}
-                onDelete={maps.length > 1 ? () => onDelete(m.id) : null} />
+                onDelete={maps.length > 1 ? () => onDelete(m.id) : null}
+                viewMode={viewMode} />
       ))}
-      <button onClick={onNew}
-              className="flex items-center gap-1 px-3 py-1 text-xs opacity-60 hover:opacity-100 flex-shrink-0 transition-opacity"
-              style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }} title="New map">
-        <Plus size={13} /> New Map
-      </button>
+      {isDM && (
+        <button onClick={onNew}
+                className="flex items-center gap-1 px-3 py-1 text-xs opacity-60 hover:opacity-100 flex-shrink-0 transition-opacity"
+                style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }} title="New map">
+          <Plus size={13} /> New Map
+        </button>
+      )}
     </div>
   );
 }
 
-function MapTab({ map, active, onSelect, onRename, onDelete }) {
+function MapTab({ map, active, onSelect, onRename, onDelete, viewMode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   useEffect(() => {
@@ -379,7 +391,7 @@ function MapTab({ map, active, onSelect, onRename, onDelete }) {
          style={{ borderColor: "#5c4030", backgroundColor: active ? "rgba(244, 232, 208, 0.15)" : "transparent", borderBottom: active ? "2px solid #e8d4a8" : "2px solid transparent", marginBottom: -2 }}
          onClick={onSelect}>
       <span style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 13, color: active ? "#f4e8d0" : "#a89070", whiteSpace: "nowrap" }}>{map.name}</span>
-      <div className="relative" ref={menuRef} onClick={e => e.stopPropagation()}>
+      {viewMode === "dm" && <div className="relative" ref={menuRef} onClick={e => e.stopPropagation()}>
         <button className="ml-1 p-0.5 rounded opacity-50 hover:opacity-100 transition-opacity" style={{ color: "#f4e8d0" }}
                 onClick={() => setMenuOpen(o => !o)} title="Map options"><ChevronDown size={11} /></button>
         {menuOpen && (
@@ -395,7 +407,7 @@ function MapTab({ map, active, onSelect, onRename, onDelete }) {
             )}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -403,7 +415,8 @@ function MapTab({ map, active, onSelect, onRename, onDelete }) {
 // ============================================================
 //  MapCanvas — isolated per map via key=mapId
 // ============================================================
-function MapCanvas({ mapId, mapName }) {
+function MapCanvas({ mapId, mapName, viewMode, onToggleView }) {
+  const isDM = viewMode === "dm";
   const [map, setMap]               = useState(null);
   const [pins, setPins]             = useState([]);
   const [zones, setZones]           = useState([]);
@@ -427,6 +440,7 @@ function MapCanvas({ mapId, mapName }) {
   const [toasts, setToasts] = useState([]);
   const [hiddenTypes, setHiddenTypes] = useState(new Set());
   const [hiddenZoneKinds, setHiddenZoneKinds] = useState(new Set());
+  const [scrollMode, setScrollMode] = useState(false);
 
   const addToast = useCallback((message, type = "success") => {
     const id = Date.now() + Math.random();
@@ -655,7 +669,7 @@ function MapCanvas({ mapId, mapName }) {
     if (mode === "pin") {
       const { x, y } = eventToMapCoords(e);
       pushToHistory();
-      const newPin = { id: "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x, y, title: "New Pin", description: "", type: "quest" };
+      const newPin = { id: "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x, y, title: "New Pin", description: "", type: "quest", visibility: "shared" };
       setPins(prev => [...prev, newPin]);
       setEditingItem({ kind: "pin", id: newPin.id });
       setMode("view"); return;
@@ -717,7 +731,7 @@ function MapCanvas({ mapId, mapName }) {
         if (pts.length >= 3) {
           pushToHistory();
           const isFaction = pendingZoneKind === "faction";
-          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), type: "path", zoneKind: pendingZoneKind, points: pts, name: isFaction ? "New Territory" : "New Coastline", dangerLevel: isFaction ? undefined : "medium", factionName: isFaction ? "" : undefined, factionColor: isFaction ? "#6b1a8b" : undefined, description: "" };
+          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), type: "path", zoneKind: pendingZoneKind, points: pts, name: isFaction ? "New Territory" : "New Coastline", dangerLevel: isFaction ? undefined : "medium", factionName: isFaction ? "" : undefined, factionColor: isFaction ? "#6b1a8b" : undefined, description: "", visibility: "shared" };
           setZones(prev => [...prev, newZone]);
           setEditingItem({ kind: "zone", id: newZone.id });
           setMode("view");
@@ -726,7 +740,7 @@ function MapCanvas({ mapId, mapName }) {
         if (drawing.radius >= 0.015) {
           pushToHistory();
           const isFaction = pendingZoneKind === "faction";
-          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), zoneKind: pendingZoneKind, x: drawing.x, y: drawing.y, radius: drawing.radius, name: isFaction ? "New Territory" : "New Hot Zone", dangerLevel: isFaction ? undefined : "medium", factionName: isFaction ? "" : undefined, factionColor: isFaction ? "#6b1a8b" : undefined, description: "" };
+          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), zoneKind: pendingZoneKind, x: drawing.x, y: drawing.y, radius: drawing.radius, name: isFaction ? "New Territory" : "New Hot Zone", dangerLevel: isFaction ? undefined : "medium", factionName: isFaction ? "" : undefined, factionColor: isFaction ? "#6b1a8b" : undefined, description: "", visibility: "shared" };
           setZones(prev => [...prev, newZone]);
           setEditingItem({ kind: "zone", id: newZone.id });
           setMode("view");
@@ -744,7 +758,10 @@ function MapCanvas({ mapId, mapName }) {
   }, [drawing, panning]);
 
   const handleWheel = (e) => {
-    e.preventDefault();
+    if (scrollMode) {
+      setPan(p => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+      return;
+    }
     setZoom(z => Math.max(0.5, Math.min(6, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
   };
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
@@ -788,8 +805,8 @@ function MapCanvas({ mapId, mapName }) {
 
   const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
 
-  const visiblePins = pins.filter(p => !hiddenTypes.has(p.type === "custom" ? "custom" : p.type));
-  const visibleZones = zones.filter(z => !hiddenZoneKinds.has(z.zoneKind || "environmental"));
+  const visiblePins = pins.filter(p => !hiddenTypes.has(p.type === "custom" ? "custom" : p.type) && (isDM || p.visibility !== "dm"));
+  const visibleZones = zones.filter(z => !hiddenZoneKinds.has(z.zoneKind || "environmental") && (isDM || z.visibility !== "dm"));
   const CLUSTER_THRESHOLD = mode === "view" ? 0.08 / Math.max(1, zoom) : 0;
   const clusterAssigned = new Set();
   const pinClusters = [];
@@ -830,32 +847,43 @@ function MapCanvas({ mapId, mapName }) {
                 <Compass size={18} style={{ color: "#5c4030" }} />
                 <h1 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 20, letterSpacing: "0.04em" }}>{mapName}</h1>
               </div>
-              <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>A cartographer's ledger of perils &amp; promises</p>
+              <div className="flex items-center justify-between">
+                <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: isDM ? "#5c4030" : "#2a4a6b" }}>{isDM ? "A cartographer's ledger of perils & promises" : "An adventurer's guide to the known lands"}</p>
+                <button onClick={onToggleView}
+                        className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider flex-shrink-0 ml-2 transition-all"
+                        style={{ backgroundColor: isDM ? "rgba(139,26,26,0.15)" : "rgba(42,74,107,0.15)", color: isDM ? "#8b1a1a" : "#2a4a6b", border: `1px solid ${isDM ? "#8b1a1a44" : "#2a4a6b44"}`, fontFamily: "'IM Fell English SC', serif" }}>
+                  {isDM ? <><Shield size={10} /> DM</> : <><Eye size={10} /> Player</>}
+                </button>
+              </div>
             </div>
 
             <div className="overflow-y-auto flex-1 px-4 py-3">
-              {pins.length === 0 && zones.length === 0 ? (
+              {(() => {
+                const sidebarZones = isDM ? zones : zones.filter(z => z.visibility !== "dm");
+                const sidebarPins = isDM ? pins : pins.filter(p => p.visibility !== "dm");
+                return sidebarPins.length === 0 && sidebarZones.length === 0 ? (
                 <div className="text-center py-10 px-4" style={{ color: "#5c4030", fontStyle: "italic" }}>
                   <Scroll size={28} className="mx-auto mb-3 opacity-50" />
-                  <p style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>The chart is yet unmarked.<br/>Place a pin or trace a hot zone.</p>
+                  <p style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{isDM ? <>The chart is yet unmarked.<br/>Place a pin or trace a hot zone.</> : "The DM has not shared any markers yet."}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {zones.length > 0 && (
+                  {sidebarZones.length > 0 && (
                     <div className="mb-3">
-                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Hot Zones · {zones.length}</h3>
-                      {zones.map(z => {
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Hot Zones · {sidebarZones.length}</h3>
+                      {sidebarZones.map(z => {
                         const D = getZoneColors(z);
                         const isFaction = z.zoneKind === "faction";
                         const kindLabel = isFaction ? (z.factionName || "Faction") : (DANGER_LEVELS[z.dangerLevel]?.label || "");
                         return (
                         <button key={z.id} onClick={() => { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); const c = z.type === "path" ? z.points[Math.floor(z.points.length / 2)] : { x: z.x, y: z.y }; focusOnItem(c.x, c.y); }}
                                 className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5"
-                                style={{ border: `1.5px solid ${D.stroke}`, backgroundColor: D.fill }}>
+                                style={{ border: `1.5px solid ${D.stroke}`, backgroundColor: D.fill, opacity: z.visibility === "dm" ? 0.55 : 1 }}>
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5 min-w-0">
                               {z.type === "path" ? (isFaction ? <Crown size={11} style={{ color: D.stroke, flexShrink: 0 }} /> : <Brush size={11} style={{ color: D.stroke, flexShrink: 0 }} />) : (isFaction ? <Crown size={11} style={{ color: D.stroke, flexShrink: 0 }} /> : <Crosshair size={11} style={{ color: D.stroke, flexShrink: 0 }} />)}
                               <span className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{z.name}</span>
+                              {z.visibility === "dm" && <Shield size={10} style={{ color: "#8b1a1a", flexShrink: 0, opacity: 0.7 }} />}
                             </div>
                             <span className="text-xs uppercase tracking-wider whitespace-nowrap" style={{ color: D.stroke, fontWeight: 600 }}>{kindLabel}</span>
                           </div>
@@ -864,19 +892,19 @@ function MapCanvas({ mapId, mapName }) {
                       })}
                     </div>
                   )}
-                  {pins.length > 0 && (
+                  {sidebarPins.length > 0 && (
                     <div>
-                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Pins · {pins.length}</h3>
-                      {pins.map(p => {
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Pins · {sidebarPins.length}</h3>
+                      {sidebarPins.map(p => {
                         const T = getPinType(p);
                         const Ico = T.icon;
                         return (
                           <button key={p.id} onClick={() => { setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); focusOnItem(p.x, p.y); }}
                                   className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5 flex items-center gap-2.5"
-                                  style={{ backgroundColor: "rgba(255, 250, 235, 0.6)", border: `1px solid ${T.color}66` }}>
+                                  style={{ backgroundColor: "rgba(255, 250, 235, 0.6)", border: `1px solid ${T.color}66`, opacity: p.visibility === "dm" ? 0.55 : 1 }}>
                             <span className="flex items-center justify-center rounded-full flex-shrink-0" style={{ width: 24, height: 24, backgroundColor: T.color, color: "#f4e8d0" }}><Ico size={12} /></span>
                             <div className="min-w-0 flex-1">
-                              <div className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{p.title}</div>
+                              <div className="flex items-center gap-1.5"><span className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{p.title}</span>{p.visibility === "dm" && <Shield size={10} style={{ color: "#8b1a1a", flexShrink: 0, opacity: 0.7 }} />}</div>
                               <div className="text-xs uppercase tracking-wider" style={{ color: T.color, opacity: 0.85 }}>{T.label}</div>
                             </div>
                           </button>
@@ -885,11 +913,12 @@ function MapCanvas({ mapId, mapName }) {
                     </div>
                   )}
                 </div>
-              )}
+              );
+              })()}
             </div>
 
-            {/* Snapshots + Download */}
-            <div className="border-t" style={{ borderColor: "#8b6f47" }}>
+            {/* Snapshots + Download — DM only */}
+            {isDM && <><div className="border-t" style={{ borderColor: "#8b6f47" }}>
               <button onClick={() => setSnapshotsOpen(o => !o)}
                       className="w-full flex items-center justify-between px-4 py-2.5 text-xs uppercase tracking-widest"
                       style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
@@ -933,7 +962,7 @@ function MapCanvas({ mapId, mapName }) {
               {saveStatus === "saved"  && "✓ Inscribed."}
               {saveStatus === "error"  && "⚠ The ink would not take."}
               {saveStatus === "idle"   && "Shared with all who hold this chart."}
-            </div>
+            </div></>}
           </>
         )}
         <button onClick={() => setSidebarOpen(s => !s)}
@@ -946,7 +975,8 @@ function MapCanvas({ mapId, mapName }) {
       {/* MAP AREA */}
       <main className="flex-1 relative overflow-hidden">
         {!map ? (
-          <UploadGate onPickFile={triggerFileSelect} onDropFile={uploadFile} error={storageError} />
+          isDM ? <UploadGate onPickFile={triggerFileSelect} onDropFile={uploadFile} error={storageError} />
+                : <div className="splash flex-col gap-3"><Compass size={48} style={{ color: "#5c4030" }} /><span style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 16, color: "#5c4030" }}>The DM has not yet prepared this chart.</span></div>
         ) : (
           <>
             {/* Toolbar */}
@@ -954,13 +984,16 @@ function MapCanvas({ mapId, mapName }) {
                  style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
               <ToolbarBtn active={mode === "view"}  onClick={() => setMode("view")}  icon={Eye}        label="Read" />
               <ToolbarBtn active={mode === "pan"}   onClick={() => setMode("pan")}   icon={Move}       label="Pan" />
-              <Sep />
-              <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}    label="Pin" />
-              <ToolbarBtn active={mode === "zone"} onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
-              <ToolbarBtn active={mode === "brush"}  onClick={() => { setZonePickerFor("brush"); }}  icon={Brush}     label="Brush" />
-              <Sep />
-              <ToolbarBtn disabled={undoStack.length === 0} onClick={undo} icon={Undo2} label="Undo" title={`Undo (${undoStack.length})`} />
-              <ToolbarBtn disabled={redoStack.length === 0} onClick={redo} icon={Redo2} label="Redo" />
+              <ToolbarBtn active={scrollMode}       onClick={() => setScrollMode(s => !s)} icon={MouseIcon} label="Scroll" title={scrollMode ? "Scroll mode ON — mouse wheel scrolls page" : "Scroll mode OFF — mouse wheel zooms map"} />
+              {isDM && <>
+                <Sep />
+                <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}    label="Pin" />
+                <ToolbarBtn active={mode === "zone"} onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
+                <ToolbarBtn active={mode === "brush"}  onClick={() => { setZonePickerFor("brush"); }}  icon={Brush}     label="Brush" />
+                <Sep />
+                <ToolbarBtn disabled={undoStack.length === 0} onClick={undo} icon={Undo2} label="Undo" title={`Undo (${undoStack.length})`} />
+                <ToolbarBtn disabled={redoStack.length === 0} onClick={redo} icon={Redo2} label="Redo" />
+              </>}
               <Sep />
               <ToolbarBtn onClick={() => setZoom(z => Math.min(6, z * 1.25))} icon={ZoomIn}  label="" />
               <ToolbarBtn onClick={() => setZoom(z => Math.max(0.5, z / 1.25))} icon={ZoomOut} label="" />
@@ -987,18 +1020,20 @@ function MapCanvas({ mapId, mapName }) {
             )}
 
             {/* Replace chart button */}
-            <div className="absolute top-4 right-4 z-20">
-              <button onClick={triggerFileSelect}
-                      className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
-                      style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
-                <Upload size={14} /><span className="hidden sm:inline">Replace Chart</span>
-              </button>
-            </div>
+            {isDM && (
+              <div className="absolute top-4 right-4 z-20">
+                <button onClick={triggerFileSelect}
+                        className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
+                        style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
+                  <Upload size={14} /><span className="hidden sm:inline">Replace Chart</span>
+                </button>
+              </div>
+            )}
 
             {/* Map canvas */}
             <div ref={wrapRef}
-                 className={`w-full h-full overflow-hidden ${cursorClass}`}
-                 style={{ touchAction: "none" }}
+                 className={`w-full h-full relative ${cursorClass}`}
+                 style={{ touchAction: scrollMode ? "auto" : "none" }}
                  onWheel={handleWheel}
                  onPointerDown={handleMapPointerDown}
                  onPointerMove={handleMapPointerMove}
@@ -1051,7 +1086,7 @@ function MapCanvas({ mapId, mapName }) {
                       const D = getZoneColors(z);
                       const sel = selectedId === z.id;
                       return (
-                        <g key={z.id} className={`zone-circle pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
+                        <g key={z.id} className={`zone-circle pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer", opacity: z.visibility === "dm" ? 0.35 : undefined }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
                           <circle cx={z.x} cy={z.y} r={z.radius} fill={D.fill} stroke={D.stroke}
                                   strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke"
@@ -1065,10 +1100,11 @@ function MapCanvas({ mapId, mapName }) {
                     {/* Path (brush) zones */}
                     {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
                       const D = getZoneColors(z);
+                      const zDMOnly = z.visibility === "dm";
                       const sel = selectedId === z.id;
                       const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
                       return (
-                        <g key={z.id} className={`zone-path pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
+                        <g key={z.id} className={`zone-path pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer", opacity: zDMOnly ? 0.35 : undefined }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
                           <polyline points={pts} fill="none" stroke="transparent" strokeWidth="0.04" strokeLinecap="round" />
                           <polyline points={pts} fill="none" stroke={D.stroke}
@@ -1177,6 +1213,7 @@ function MapCanvas({ mapId, mapName }) {
                     const Ico = T.icon;
                     const sel = selectedId === p.id;
                     const isMoving = movingPin === p.id;
+                    const isDMOnly = p.visibility === "dm";
                     const pinCursor = mode === "movepin" ? (isMoving ? "grabbing" : "grab") : (mode === "view" ? "pointer" : "inherit");
                     return (
                       <button key={p.id}
@@ -1199,7 +1236,7 @@ function MapCanvas({ mapId, mapName }) {
                               onPointerUp={(e) => { if (movingPin === p.id) setMovingPin(null); }}
                               onPointerCancel={(e) => { if (movingPin === p.id) setMovingPin(null); }}
                               className={`absolute group pin-marker${sel ? " pin-selected" : ""}${isMoving ? " pin-moving" : ""}`}
-                              style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: pinCursor, zIndex: sel || isMoving ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
+                              style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: pinCursor, zIndex: sel || isMoving ? 15 : 10, animation: "pinDrop 0.4s ease-out", opacity: isDMOnly ? 0.5 : undefined }}>
                         <div className="absolute" style={{ bottom: -3, left: "50%", transform: "translateX(-50%)", width: 22, height: 6, background: "radial-gradient(ellipse, rgba(42,24,16,0.6) 0%, transparent 70%)" }} />
                         <div className="relative flex items-center justify-center"
                              style={{ width: 36, height: 44, transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1), filter 0.2s", transform: isMoving ? "scale(1.2)" : "scale(1)", filter: sel || isMoving ? `drop-shadow(0 0 10px ${T.glow}) drop-shadow(0 0 4px ${T.glow})` : `drop-shadow(0 2px 5px rgba(0,0,0,0.75)) drop-shadow(0 0 10px rgba(255,255,255,0.2))` }}>
@@ -1219,8 +1256,8 @@ function MapCanvas({ mapId, mapName }) {
                           <div className="relative" style={{ marginTop: -8, color: T.color, transition: "transform 0.2s" }}><Ico size={15} strokeWidth={2.5} /></div>
                         </div>
                         {/* Magical tooltip */}
-                        <div className="absolute left-1/2 -translate-x-1/2 -top-16 opacity-0 group-hover:opacity-100 pointer-events-none"
-                             style={{ transition: "opacity 0.2s, transform 0.2s", transform: "translateY(4px)", ["--tw-translate-y"]: "0px" }}>
+                        <div className="absolute left-1/2 -translate-x-1/2 -top-16 pin-hover-tip pointer-events-none"
+                             style={{ transition: "opacity 0.2s, transform 0.2s" }}>
                           <div className="px-3 py-2 rounded-sm whitespace-nowrap relative overflow-hidden"
                                style={{ backgroundColor: "rgba(18, 10, 4, 0.97)", border: `1px solid ${T.color}88`, boxShadow: `0 0 18px ${T.glow}44, 0 4px 12px rgba(0,0,0,0.5)` }}>
                             <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${T.glow}12 0%, transparent 60%)`, pointerEvents: "none" }} />
@@ -1245,16 +1282,16 @@ function MapCanvas({ mapId, mapName }) {
       </main>
 
       {editingObj && (
-        <EditPanel item={editingObj} kind={editingItem.kind}
+        <EditPanel item={editingObj} kind={editingItem.kind} readOnly={!isDM}
                    onClose={() => { setEditingItem(null); setSelectedId(null); }}
-                   onSave={(draft) => {
+                   onSave={isDM ? (draft) => {
                      if (editingItem.kind === "pin") updatePin(editingObj.id, draft);
                      else updateZone(editingObj.id, draft);
                      setEditingItem(null); setSelectedId(null);
                      addToast("Changes saved.");
-                   }}
-                   onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)}
-                   onStartMove={editingItem.kind === "pin" ? () => {
+                   } : null}
+                   onDelete={isDM ? () => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id) : null}
+                   onStartMove={isDM && editingItem.kind === "pin" ? () => {
                      const pinId = editingObj.id;
                      setEditingItem(null); setSelectedId(null);
                      setMode("movepin");
@@ -1287,7 +1324,7 @@ function ToolbarBtn({ active, disabled, onClick, icon: Icon, label, title: title
             className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs uppercase tracking-wider"
             style={{ color: disabled ? "#5c4030" : (active ? "#2a1810" : "#f4e8d0"), backgroundColor: active ? "#e8d4a8" : "transparent", opacity: disabled ? 0.35 : 1, fontFamily: "'IM Fell English SC', serif", cursor: disabled ? "default" : "pointer" }}>
       <Icon size={14} />
-      {label && <span className="hidden sm:inline">{label}</span>}
+      {label && <span className="hidden 2xl:inline">{label}</span>}
     </button>
   );
 }
@@ -1324,9 +1361,9 @@ function UploadGate({ onPickFile, onDropFile, error }) {
   );
 }
 
-function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
+function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove, readOnly }) {
   const [draft, setDraft] = useState({ ...item });
-  const updateDraft = (patch) => setDraft(d => ({ ...d, ...patch }));
+  const updateDraft = readOnly ? () => {} : (patch) => setDraft(d => ({ ...d, ...patch }));
   return (
     <div className="absolute right-0 top-0 h-full w-full sm:w-96 sm:max-w-[90vw] z-30 shadow-2xl overflow-y-auto"
          style={{ backgroundColor: "rgba(244, 232, 208, 0.97)", borderLeft: "2px solid #5c4030", fontFamily: "'EB Garamond', serif", animation: "slideInPanel 0.25s cubic-bezier(0.16, 1, 0.3, 1)" }}>
@@ -1344,26 +1381,30 @@ function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
               <GrabHand size={14} /> Move
             </button>
           )}
-          <button onClick={() => onSave(draft)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs"
-                  style={{ backgroundColor: "#2a4a1a", color: "#c8f0a8", border: "1px solid #4a6741", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.05em" }}
-                  title="Save changes">
-            <Check size={14} /> Save
-          </button>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-black/10" title="Discard changes">
+          {onSave && (
+            <button onClick={() => onSave(draft)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs"
+                    style={{ backgroundColor: "#2a4a1a", color: "#c8f0a8", border: "1px solid #4a6741", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.05em" }}
+                    title="Save changes">
+              <Check size={14} /> Save
+            </button>
+          )}
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-black/10" title={readOnly ? "Close" : "Discard changes"}>
             <X size={18} style={{ color: "#5c4030" }} />
           </button>
         </div>
       </div>
-      <div className="px-5 py-4 space-y-4">
-        {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} /> : <ZoneEditor item={draft} onUpdate={updateDraft} />}
-        <div className="pt-3 border-t" style={{ borderColor: "#8b6f47" }}>
-          <button onClick={() => { if (confirm(`Remove this ${kind}?`)) onDelete(); }}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm rounded"
-                  style={{ color: "#8b1a1a", border: "1px solid #8b1a1a", backgroundColor: "transparent" }}>
-            <Trash2 size={14} /> {kind === "pin" ? "Remove Pin" : "Remove Zone"}
-          </button>
-        </div>
+      <div className="px-5 py-4 space-y-4" style={readOnly ? { pointerEvents: "none", opacity: 0.85 } : undefined}>
+        {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} readOnly={readOnly} /> : <ZoneEditor item={draft} onUpdate={updateDraft} readOnly={readOnly} />}
+        {onDelete && (
+          <div className="pt-3 border-t" style={{ borderColor: "#8b6f47" }}>
+            <button onClick={() => { if (confirm(`Remove this ${kind}?`)) onDelete(); }}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm rounded"
+                    style={{ color: "#8b1a1a", border: "1px solid #8b1a1a", backgroundColor: "transparent" }}>
+              <Trash2 size={14} /> {kind === "pin" ? "Remove Pin" : "Remove Zone"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1379,12 +1420,26 @@ const inputStyle = () => ({
   fontFamily: "'EB Garamond', serif", fontSize: 15, color: "#2a1810", outline: "none",
 });
 
-function PinEditor({ item, onUpdate }) {
+function VisibilityToggle({ value, onChange }) {
+  const isDMOnly = value === "dm";
+  return (
+    <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded" style={{ backgroundColor: isDMOnly ? "rgba(139,26,26,0.1)" : "rgba(74,103,65,0.1)", border: `1px solid ${isDMOnly ? "#8b1a1a44" : "#4a674144"}` }}>
+      <button onClick={() => onChange(isDMOnly ? "shared" : "dm")}
+              className="flex items-center gap-1.5 text-xs"
+              style={{ fontFamily: "'IM Fell English SC', serif", color: isDMOnly ? "#8b1a1a" : "#4a6741" }}>
+        {isDMOnly ? <><Eye size={12} style={{ opacity: 0.5, textDecoration: "line-through" }} /> DM Only — hidden from players</> : <><Eye size={12} /> Shared — visible to players</>}
+      </button>
+    </div>
+  );
+}
+
+function PinEditor({ item, onUpdate, readOnly }) {
   const [customExpanded, setCustomExpanded] = useState(!item.customLabel);
   const customColor = item.customColor || "#7a5c3a";
   const customIconKey = item.customIconKey || "star";
   return (
     <>
+      {!readOnly && <VisibilityToggle value={item.visibility || "shared"} onChange={(v) => onUpdate({ visibility: v })} />}
       <div><FieldLabel>Title</FieldLabel><input value={item.title} onChange={(e) => onUpdate({ title: e.target.value })} style={inputStyle()} placeholder="What lies here?" /></div>
       <div>
         <FieldLabel>Type</FieldLabel>
@@ -1460,11 +1515,12 @@ function PinEditor({ item, onUpdate }) {
   );
 }
 
-function ZoneEditor({ item, onUpdate }) {
+function ZoneEditor({ item, onUpdate, readOnly }) {
   const isFaction = item.zoneKind === "faction";
   const factionColor = item.factionColor || "#6b1a8b";
   return (
     <>
+      {!readOnly && <VisibilityToggle value={item.visibility || "shared"} onChange={(v) => onUpdate({ visibility: v })} />}
       <div>
         <FieldLabel>{item.type === "path" ? (isFaction ? "Territory Route" : "Coastline Name") : (isFaction ? "Territory Name" : "Zone Name")}</FieldLabel>
         <input value={item.name} onChange={(e) => onUpdate({ name: e.target.value })} style={inputStyle()} placeholder="What is this region called?" />
