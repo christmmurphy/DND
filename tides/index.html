@@ -109,7 +109,7 @@ const apiNewMap         = (name)               => api("newmap", null, { method: 
 const apiRenameMap      = (id, name)           => api("renamemap", id, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
 const apiDeleteMap      = (id)                 => api("deletemap", id, { method: "POST", headers: { ...authHeaders() } });
 const apiLoad           = (mapId)              => api("load", mapId);
-const apiSaveMeta       = (mapId, pins, zones) => api("savemeta", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ pins, zones }) });
+const apiSaveMeta       = (mapId, pins, zones, cities) => api("savemeta", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ pins, zones, cities }) });
 const apiSaveMap        = (mapId, dataUrl)     => api("savemap", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ data: dataUrl }) });
 const apiClearMap       = (mapId)              => api("clearmap", mapId, { method: "POST", headers: { ...authHeaders() } });
 const mapImageUrl       = (mapId, v)           => `${API}?action=getmap&map=${encodeURIComponent(mapId)}${v ? "&v=" + v : ""}`;
@@ -200,6 +200,7 @@ const Gem       = (p) => <Svg {...p}><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="
 const Wand2     = (p) => <Svg {...p}><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2 19l3 3 16.64-16.64a1.21 1.21 0 0 0 0-1.72z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M7 4h4"/><path d="M19 14v4"/><path d="M21 16h-4"/></Svg>;
 const Sparkles  = (p) => <Svg {...p}><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></Svg>;
 const Trident   = (p) => <Svg {...p}><line x1="12" y1="9" x2="12" y2="22"/><path d="M8 2v7"/><path d="M16 2v7"/><path d="M8 2a4 4 0 0 0 4 4 4 4 0 0 0 4-4"/><line x1="6" y1="7" x2="18" y2="7"/></Svg>;
+const Landmark  = (p) => <Svg {...p}><line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/><line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/><line x1="2" x2="22" y1="18" y2="18"/></Svg>;
 
 // ============================================================
 //  Constants
@@ -224,6 +225,13 @@ const DANGER_LEVELS = {
   medium: { label: "Medium", fill: "rgba(196, 100, 30, 0.52)", stroke: "#c4641e", desc: "Organized threats, dangerous fauna, magical disturbances." },
   high:   { label: "High",   fill: "rgba(139, 26, 26, 0.58)",  stroke: "#8b1a1a", desc: "Apex predators, raiding parties, elite cultists." },
   lethal: { label: "Lethal", fill: "rgba(60, 8, 8, 0.72)",     stroke: "#3c0808", desc: "Legendary creatures, planar incursions, certain death." },
+};
+
+const CITY_SIZES = {
+  village:  { label: "Village",  color: "#4a6741", glow: "#7ba070", icon: Home,     scale: 0.85 },
+  town:     { label: "Town",     color: "#2a4a6b", glow: "#5478a3", icon: Landmark, scale: 0.95 },
+  city:     { label: "City",     color: "#8b6f1f", glow: "#c4a82a", icon: Landmark, scale: 1.0 },
+  capital:  { label: "Capital",  color: "#6b1a4a", glow: "#a33878", icon: Crown,    scale: 1.15 },
 };
 
 const MAX_HISTORY = 4;
@@ -465,6 +473,7 @@ function MapCanvas({ mapId, mapName }) {
   const [map, setMap]               = useState(null);
   const [pins, setPins]             = useState([]);
   const [zones, setZones]           = useState([]);
+  const [cities, setCities]         = useState([]);
   const [mode, setMode]             = useState("view");
   const [editingItem, setEditingItem] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -480,6 +489,7 @@ function MapCanvas({ mapId, mapName }) {
   const [snapshots, setSnapshots]   = useState([]);
   const [snapshotStatus, setSnapshotStatus] = useState("idle");
   const [movingPin, setMovingPin] = useState(null);
+  const [movingCity, setMovingCity] = useState(null);
   const [zonePickerFor, setZonePickerFor] = useState(null); // "circle" | "brush"
   const [pendingZoneKind, setPendingZoneKind] = useState("environmental");
   const [toasts, setToasts] = useState([]);
@@ -492,6 +502,7 @@ function MapCanvas({ mapId, mapName }) {
   const navRef = useRef({});
   const [liveEditPin, setLiveEditPin] = useState(null);
   const [liveEditZone, setLiveEditZone] = useState(null);
+  const [hiddenCitySizes, setHiddenCitySizes] = useState(new Set());
 
   const addToast = useCallback((message, type = "success") => {
     const id = Date.now() + Math.random();
@@ -559,17 +570,19 @@ function MapCanvas({ mapId, mapName }) {
   const lastMapVersionRef = useRef(0);
   const editingRef        = useRef(null);
   // Mirror current pins/zones into refs so history closures always capture latest
-  const pinsRef  = useRef(pins);
-  const zonesRef = useRef(zones);
+  const pinsRef   = useRef(pins);
+  const zonesRef  = useRef(zones);
+  const citiesRef = useRef(cities);
   useEffect(() => { editingRef.current = editingItem; }, [editingItem]);
   useEffect(() => { pinsRef.current = pins; }, [pins]);
   useEffect(() => { zonesRef.current = zones; }, [zones]);
+  useEffect(() => { citiesRef.current = cities; }, [cities]);
 
   const triggerFileSelect = () => fileInputRef.current?.click();
 
   // ---------- History ----------
   const pushToHistory = useCallback(() => {
-    setUndoStack(prev => [...prev.slice(-(MAX_HISTORY - 1)), { pins: pinsRef.current, zones: zonesRef.current }]);
+    setUndoStack(prev => [...prev.slice(-(MAX_HISTORY - 1)), { pins: pinsRef.current, zones: zonesRef.current, cities: citiesRef.current }]);
     setRedoStack([]);
   }, []);
 
@@ -577,9 +590,10 @@ function MapCanvas({ mapId, mapName }) {
     setUndoStack(prev => {
       if (prev.length === 0) return prev;
       const snapshot = prev[prev.length - 1];
-      setRedoStack(r => [{ pins: pinsRef.current, zones: zonesRef.current }, ...r.slice(0, MAX_HISTORY - 1)]);
+      setRedoStack(r => [{ pins: pinsRef.current, zones: zonesRef.current, cities: citiesRef.current }, ...r.slice(0, MAX_HISTORY - 1)]);
       setPins(snapshot.pins);
       setZones(snapshot.zones);
+      setCities(snapshot.cities || []);
       setEditingItem(null); setSelectedId(null);
       return prev.slice(0, -1);
     });
@@ -589,9 +603,10 @@ function MapCanvas({ mapId, mapName }) {
     setRedoStack(prev => {
       if (prev.length === 0) return prev;
       const snapshot = prev[0];
-      setUndoStack(u => [...u.slice(-(MAX_HISTORY - 1)), { pins: pinsRef.current, zones: zonesRef.current }]);
+      setUndoStack(u => [...u.slice(-(MAX_HISTORY - 1)), { pins: pinsRef.current, zones: zonesRef.current, cities: citiesRef.current }]);
       setPins(snapshot.pins);
       setZones(snapshot.zones);
+      setCities(snapshot.cities || []);
       setEditingItem(null); setSelectedId(null);
       return prev.slice(1);
     });
@@ -615,6 +630,7 @@ function MapCanvas({ mapId, mapName }) {
         const data = await apiLoad(mapId);
         setPins(data.pins || []);
         setZones(data.zones || []);
+        setCities(data.cities || []);
         lastVersionRef.current = data.version || 0;
         if (data.hasMap) {
           lastMapVersionRef.current = data.mapVersion || 0;
@@ -635,14 +651,14 @@ function MapCanvas({ mapId, mapName }) {
     setSaveStatus("saving");
     const t = setTimeout(async () => {
       try {
-        const res = await apiSaveMeta(mapId, pins, zones);
+        const res = await apiSaveMeta(mapId, pins, zones, cities);
         lastVersionRef.current = res.version || lastVersionRef.current;
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
       } catch { setSaveStatus("error"); }
     }, 400);
     return () => clearTimeout(t);
-  }, [pins, zones, loaded]);
+  }, [pins, zones, cities, loaded]);
 
   // ---------- Poll ----------
   useEffect(() => {
@@ -655,7 +671,7 @@ function MapCanvas({ mapId, mapName }) {
         if (!alive) return;
         if ((data.version || 0) > lastVersionRef.current) {
           lastVersionRef.current = data.version;
-          setPins(data.pins || []); setZones(data.zones || []);
+          setPins(data.pins || []); setZones(data.zones || []); setCities(data.cities || []);
           skipNextSave.current = true;
         }
         if ((data.mapVersion || 0) > lastMapVersionRef.current) {
@@ -706,7 +722,7 @@ function MapCanvas({ mapId, mapName }) {
   };
 
   const handleDownloadMapData = () => {
-    const payload = { map: mapName, pins, zones, exportedAt: new Date().toISOString() };
+    const payload = { map: mapName, pins, zones, cities, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -721,7 +737,7 @@ function MapCanvas({ mapId, mapName }) {
       const res = await apiLoadSnapshot(mapId, snap.id);
       if (res.error) throw new Error(res.error);
       const data = await apiLoad(mapId);
-      setPins(data.pins || []); setZones(data.zones || []);
+      setPins(data.pins || []); setZones(data.zones || []); setCities(data.cities || []);
       lastVersionRef.current = data.version || 0;
       skipNextSave.current = true;
       if (data.hasMap) { lastMapVersionRef.current = data.mapVersion || 0; setMap(mapImageUrl(mapId, data.mapVersion)); }
@@ -768,6 +784,15 @@ function MapCanvas({ mapId, mapName }) {
       const newPin = { id: "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x, y, title: "New Pin", description: "", type: "note" };
       setPins(prev => [...prev, newPin]);
       setEditingItem({ kind: "pin", id: newPin.id });
+      setMode("view"); return;
+    }
+
+    if (mode === "city") {
+      const { x, y } = eventToMapCoords(e);
+      pushToHistory();
+      const newCity = { id: "c_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x, y, name: "New Settlement", size: "town", leader: "", population: "", economy: "", factions: [], districts: [], description: "" };
+      setCities(prev => [...prev, newCity]);
+      setEditingItem({ kind: "city", id: newCity.id });
       setMode("view"); return;
     }
 
@@ -862,8 +887,10 @@ function MapCanvas({ mapId, mapName }) {
 
   const updatePin  = (id, patch) => setPins(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
   const updateZone = (id, patch) => setZones(prev => prev.map(z => z.id === id ? { ...z, ...patch } : z));
+  const updateCity = (id, patch) => setCities(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
   const deletePin  = (id) => { pushToHistory(); setPins(prev => prev.filter(p => p.id !== id)); setEditingItem(null); setSelectedId(null); };
   const deleteZone = (id) => { pushToHistory(); setZones(prev => prev.filter(z => z.id !== id)); setEditingItem(null); setSelectedId(null); };
+  const deleteCity = (id) => { pushToHistory(); setCities(prev => prev.filter(c => c.id !== id)); setEditingItem(null); setSelectedId(null); };
 
   const focusOnItem = useCallback((cx, cy) => {
     if (!imgContainerRef.current) return;
@@ -897,11 +924,16 @@ function MapCanvas({ mapId, mapName }) {
     setHiddenZoneKinds(prev => { const s = new Set(prev); if (s.has(kind)) s.delete(kind); else s.add(kind); return s; });
   }, []);
 
-  const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
+  const toggleCitySize = useCallback((size) => {
+    setHiddenCitySizes(prev => { const s = new Set(prev); if (s.has(size)) s.delete(size); else s.add(size); return s; });
+  }, []);
+
+  const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : editingItem.kind === "city" ? cities.find(c => c.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
 
   const visiblePins = pins.filter(p => !hiddenTypes.has(p.type === "custom" ? "custom" : p.type));
   const visibleZones = zones.filter(z => !hiddenZoneKinds.has(z.zoneKind || "environmental"));
   navRef.current = { vPins: visiblePins, vZones: visibleZones, selId: selectedId, focusFn: focusOnItem, setSelId: setSelectedId, setEditFn: setEditingItem };
+  const visibleCities = cities.filter(c => !hiddenCitySizes.has(c.size || "town"));
   const CLUSTER_THRESHOLD = mode === "view" ? 0.08 / Math.max(1, zoom) : 0;
   const clusterAssigned = new Set();
   const pinClusters = [];
@@ -917,7 +949,7 @@ function MapCanvas({ mapId, mapName }) {
   }
   const clusteredPinIds = new Set(pinClusters.flatMap(g => g.map(p => p.id)));
 
-  const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", brush: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab", movepin: movingPin ? "cursor-grabbing" : "cursor-default" }[mode] || "cursor-default";
+  const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", city: "cursor-crosshair", zone: "cursor-crosshair", brush: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab", movepin: movingPin ? "cursor-grabbing" : "cursor-default", movecity: movingCity ? "cursor-grabbing" : "cursor-default" }[mode] || "cursor-default";
 
   if (!loaded) return (
     <div className="splash flex-col gap-3">
@@ -946,7 +978,7 @@ function MapCanvas({ mapId, mapName }) {
             </div>
 
             <div className="overflow-y-auto flex-1 px-4 py-3">
-              {pins.length === 0 && zones.length === 0 ? (
+              {pins.length === 0 && zones.length === 0 && cities.length === 0 ? (
                 <div className="text-center py-10 px-4" style={{ color: "#5c4030", fontStyle: "italic" }}>
                   <Scroll size={28} className="mx-auto mb-3 opacity-50" />
                   <p style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>The chart is yet unmarked.<br/>Place a pin or trace a hot zone.</p>
@@ -974,6 +1006,26 @@ function MapCanvas({ mapId, mapName }) {
                             <span className="text-xs uppercase tracking-wider whitespace-nowrap" style={{ color: D.stroke, fontWeight: 600 }}>{kindLabel}</span>
                           </div>
                         </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {cities.length > 0 && (
+                    <div className="mb-3">
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Settlements · {cities.length}</h3>
+                      {cities.map(c => {
+                        const S = CITY_SIZES[c.size] || CITY_SIZES.town;
+                        const Ico = S.icon;
+                        return (
+                          <button key={c.id} onClick={() => { setSelectedId(c.id); setEditingItem({ kind: "city", id: c.id }); focusOnItem(c.x, c.y); }}
+                                  className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5 flex items-center gap-2.5"
+                                  style={{ backgroundColor: S.color + "18", border: `1.5px solid ${S.color}66` }}>
+                            <span className="flex items-center justify-center rounded flex-shrink-0" style={{ width: 24, height: 24, backgroundColor: S.color, color: "#f4e8d0" }}><Ico size={12} /></span>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{c.name}</div>
+                              <div className="text-xs uppercase tracking-wider" style={{ color: S.color, opacity: 0.85 }}>{S.label}{c.leader ? ` · ${c.leader}` : ""}</div>
+                            </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -1077,6 +1129,7 @@ function MapCanvas({ mapId, mapName }) {
               <ToolbarBtn active={mode === "pan"}   onClick={() => setMode("pan")}   icon={Move}       label="Pan" />
               <Sep />
               <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}    label="Pin" />
+              <ToolbarBtn active={mode === "city"}  onClick={() => setMode("city")}  icon={Landmark}  label="City" />
               <ToolbarBtn active={mode === "zone"} onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
               <ToolbarBtn active={mode === "brush"}  onClick={() => { setZonePickerFor("brush"); }}  icon={Brush}     label="Brush" />
               <Sep />
@@ -1102,7 +1155,9 @@ function MapCanvas({ mapId, mapName }) {
               <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded text-sm"
                    style={{ backgroundColor: "rgba(244, 232, 208, 0.95)", border: "1px dashed #5c4030", fontFamily: "'IM Fell English', serif", fontStyle: "italic" }}>
                 {mode === "pin"     && "Click anywhere on the chart to place a pin."}
+                {mode === "city"    && "Click anywhere on the chart to place a settlement."}
                 {mode === "movepin" && "Drag the pin to reposition it. Click Read when done."}
+                {mode === "movecity" && "Drag the settlement to reposition it. Click Read when done."}
                 {mode === "zone"   && `Click and drag to draw a ${pendingZoneKind} zone.`}
                 {mode === "brush"  && `Click and drag to paint a ${pendingZoneKind} stroke.`}
                 {mode === "pan"    && "Drag to reposition. Pinch or scroll to zoom."}
@@ -1403,12 +1458,57 @@ function MapCanvas({ mapId, mapName }) {
                       </button>
                     );
                   })}
+
+                  {/* City markers */}
+                  {visibleCities.map(c => {
+                    const S = CITY_SIZES[c.size] || CITY_SIZES.town;
+                    const Ico = S.icon;
+                    const sel = selectedId === c.id;
+                    const isMoving = movingCity === c.id;
+                    const cityScale = (S.scale || 1) / Math.max(0.5, zoom * 0.7);
+                    const cityCursor = mode === "movecity" ? (isMoving ? "grabbing" : "grab") : (mode === "view" ? "pointer" : "inherit");
+                    return (
+                      <button key={c.id}
+                              onPointerDown={(e) => {
+                                if (mode === "movecity") {
+                                  e.stopPropagation();
+                                  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+                                  pushToHistory();
+                                  setMovingCity(c.id);
+                                } else if (mode === "view") {
+                                  e.stopPropagation(); setSelectedId(c.id); setEditingItem({ kind: "city", id: c.id });
+                                }
+                              }}
+                              onPointerMove={(e) => { if (movingCity === c.id) { const { x, y } = eventToMapCoords(e); updateCity(c.id, { x, y }); } }}
+                              onPointerUp={() => { if (movingCity === c.id) setMovingCity(null); }}
+                              onPointerCancel={() => { if (movingCity === c.id) setMovingCity(null); }}
+                              className={`absolute group pin-marker${sel ? " pin-selected" : ""}${isMoving ? " pin-moving" : ""}`}
+                              style={{ left: `${c.x * 100}%`, top: `${c.y * 100}%`, transform: `translate(-50%, -100%) scale(${cityScale})`, transformOrigin: "bottom center", cursor: cityCursor, zIndex: sel || isMoving ? 20 : 18, animation: "pinDrop 0.4s ease-out" }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                          <div className="group-hover:scale-105" style={{
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                            padding: "5px 10px", borderRadius: 4,
+                            backgroundColor: S.color, border: "2px solid rgba(26,14,8,0.8)",
+                            color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif", fontSize: 12, letterSpacing: "0.04em",
+                            boxShadow: sel || isMoving ? `0 0 16px ${S.glow}, 0 4px 16px rgba(0,0,0,0.6)` : `0 3px 12px rgba(0,0,0,0.5), 0 0 8px ${S.glow}33`,
+                            whiteSpace: "nowrap", transition: "box-shadow 0.2s, transform 0.2s",
+                            transform: isMoving ? "scale(1.1)" : "scale(1)",
+                          }}>
+                            <Ico size={14} style={{ flexShrink: 0 }} />
+                            <span>{c.name}</span>
+                          </div>
+                          <div style={{ width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `8px solid ${S.color}` }} />
+                          <div style={{ width: 16, height: 4, background: "radial-gradient(ellipse, rgba(42,24,16,0.5) 0%, transparent 70%)", marginTop: -2 }} />
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
             <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-3">
-              <FilterPanel hiddenTypes={hiddenTypes} hiddenZoneKinds={hiddenZoneKinds} onToggleType={togglePinType} onToggleZoneKind={toggleZoneKind} />
+              <FilterPanel hiddenTypes={hiddenTypes} hiddenZoneKinds={hiddenZoneKinds} hiddenCitySizes={hiddenCitySizes} onToggleType={togglePinType} onToggleZoneKind={toggleZoneKind} onToggleCitySize={toggleCitySize} />
               <div className="pointer-events-none opacity-50"><CompassRose size={70} /></div>
             </div>
           </>
@@ -1424,16 +1524,17 @@ function MapCanvas({ mapId, mapName }) {
                    onClose={() => { setEditingItem(null); setSelectedId(null); setLiveEditPin(null); setLiveEditZone(null); }}
                    onSave={(draft) => {
                      if (editingItem.kind === "pin") updatePin(editingObj.id, draft);
+                     else if (editingItem.kind === "city") updateCity(editingObj.id, draft);
                      else updateZone(editingObj.id, draft);
                      setEditingItem(null); setSelectedId(null); setLiveEditPin(null); setLiveEditZone(null);
                      addToast("Changes saved.");
                    }}
-                   onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)}
-                   onStartMove={editingItem.kind === "pin" ? () => {
-                     const pinId = editingObj.id;
+                   onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : editingItem.kind === "city" ? deleteCity(editingObj.id) : deleteZone(editingObj.id)}
+                   onStartMove={(editingItem.kind === "pin" || editingItem.kind === "city") ? () => {
+                     const isCity = editingItem.kind === "city";
                      setEditingItem(null); setSelectedId(null);
-                     setMode("movepin");
-                     addToast("Drag the pin to reposition it.");
+                     setMode(isCity ? "movecity" : "movepin");
+                     addToast(isCity ? "Drag the settlement to reposition it." : "Drag the pin to reposition it.");
                    } : null} />
       )}
 
@@ -1522,7 +1623,7 @@ function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove, onVisua
       <div className="px-5 py-4 flex items-center justify-between border-b sticky top-0"
            style={{ borderColor: "#8b6f47", backgroundColor: "rgba(244, 232, 208, 0.98)", backdropFilter: "blur(4px)" }}>
         <h3 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 18, color: "#2a1810", letterSpacing: "0.04em" }}>
-          {kind === "pin" ? "Pin" : item.zoneKind === "faction" ? (item.type === "path" ? "Faction Route" : "Faction Territory") : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
+          {kind === "pin" ? "Pin" : kind === "city" ? "Settlement Record" : item.zoneKind === "faction" ? (item.type === "path" ? "Faction Route" : "Faction Territory") : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
         </h3>
         <div className="flex items-center gap-1.5">
           {onStartMove && (
@@ -1555,7 +1656,7 @@ function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove, onVisua
       {/* key forces this subtree to remount (and re-animate) when the selected item changes */}
       <div key={item.id}>
         <div className="px-5 py-4 space-y-4">
-          {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} onVisualChange={onVisualChange} /> : <ZoneEditor item={draft} onUpdate={updateDraft} onVisualChange={onVisualChange} />}
+          {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} onVisualChange={onVisualChange} /> : kind === "city" ? <CityEditor item={draft} onUpdate={updateDraft} /> : <ZoneEditor item={draft} onUpdate={updateDraft} onVisualChange={onVisualChange} />}
         </div>
       </div>
     </div>
@@ -1750,6 +1851,70 @@ function ZoneEditor({ item, onUpdate, onVisualChange }) {
   );
 }
 
+function CityEditor({ item, onUpdate }) {
+  return (
+    <>
+      <div><FieldLabel>Name</FieldLabel><input value={item.name} onChange={(e) => onUpdate({ name: e.target.value })} style={inputStyle()} placeholder="What is this settlement called?" /></div>
+
+      <div>
+        <FieldLabel>Size</FieldLabel>
+        <div className="grid grid-cols-4 gap-1.5">
+          {Object.entries(CITY_SIZES).map(([key, s]) => {
+            const Icon = s.icon; const active = item.size === key;
+            return (
+              <button key={key} onClick={() => onUpdate({ size: key })}
+                      className="flex flex-col items-center gap-1 py-2 rounded"
+                      style={{ backgroundColor: active ? s.color : "rgba(255, 250, 235, 0.6)", color: active ? "#f4e8d0" : s.color, border: `1px solid ${active ? s.color : s.color + "55"}` }}>
+                <Icon size={16} /><span className="text-[10px] uppercase tracking-wider">{s.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div><FieldLabel>Leader</FieldLabel><input value={item.leader || ""} onChange={(e) => onUpdate({ leader: e.target.value })} style={inputStyle()} placeholder="Who rules here?" /></div>
+
+      <div><FieldLabel>Population</FieldLabel><input value={item.population || ""} onChange={(e) => onUpdate({ population: e.target.value })} style={inputStyle()} placeholder="e.g. ~12,000 or 'Sparse'" /></div>
+
+      <div><FieldLabel>Economy</FieldLabel><textarea value={item.economy || ""} onChange={(e) => onUpdate({ economy: e.target.value })} style={{ ...inputStyle(), minHeight: 60, resize: "vertical", lineHeight: 1.5 }} placeholder="Trade, agriculture, mining…" /></div>
+
+      <div>
+        <FieldLabel>Factions Present</FieldLabel>
+        {(item.factions || []).map((f, i) => (
+          <div key={i} className="flex items-center gap-1.5 mb-1.5">
+            <input value={f} onChange={(e) => { const factions = [...(item.factions || [])]; factions[i] = e.target.value; onUpdate({ factions }); }} style={inputStyle()} placeholder="Faction name…" />
+            <button onClick={() => { const factions = (item.factions || []).filter((_, j) => j !== i); onUpdate({ factions }); }} className="p-1.5 rounded hover:bg-black/10 flex-shrink-0" style={{ color: "#8b1a1a" }}><X size={14} /></button>
+          </div>
+        ))}
+        <button onClick={() => onUpdate({ factions: [...(item.factions || []), ""] })}
+                className="flex items-center gap-1 text-xs mt-1 px-2 py-1 rounded hover:bg-black/5"
+                style={{ color: "#5c4030", fontFamily: "'IM Fell English SC', serif" }}><Plus size={12} /> Add Faction</button>
+      </div>
+
+      <div>
+        <FieldLabel>Districts</FieldLabel>
+        {(item.districts || []).map((d, i) => (
+          <div key={i} className="mb-2 p-2.5 rounded" style={{ backgroundColor: "rgba(255,250,235,0.5)", border: "1px solid #8b6f4755" }}>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <input value={d.name} onChange={(e) => { const districts = [...(item.districts || [])]; districts[i] = { ...districts[i], name: e.target.value }; onUpdate({ districts }); }}
+                     style={{ ...inputStyle(), fontSize: 13, padding: "5px 8px", fontWeight: 600 }} placeholder="District name…" />
+              <button onClick={() => { const districts = (item.districts || []).filter((_, j) => j !== i); onUpdate({ districts }); }}
+                      className="p-1.5 rounded hover:bg-black/10 flex-shrink-0" style={{ color: "#8b1a1a" }}><X size={14} /></button>
+            </div>
+            <textarea value={d.description || ""} onChange={(e) => { const districts = [...(item.districts || [])]; districts[i] = { ...districts[i], description: e.target.value }; onUpdate({ districts }); }}
+                      style={{ ...inputStyle(), fontSize: 13, padding: "5px 8px", minHeight: 50, resize: "vertical", lineHeight: 1.4 }} placeholder="What defines this district?" />
+          </div>
+        ))}
+        <button onClick={() => onUpdate({ districts: [...(item.districts || []), { name: "", description: "" }] })}
+                className="flex items-center gap-1 text-xs mt-1 px-2 py-1 rounded hover:bg-black/5"
+                style={{ color: "#5c4030", fontFamily: "'IM Fell English SC', serif" }}><Plus size={12} /> Add District</button>
+      </div>
+
+      <div><FieldLabel>Notes</FieldLabel><textarea value={item.description || ""} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 100, resize: "vertical", lineHeight: 1.5 }} placeholder="Lore, history, notable features…" /></div>
+    </>
+  );
+}
+
 function ZoneKindPicker({ shape, onPick, onDismiss }) {
   useEffect(() => {
     const handler = (e) => { onDismiss(); };
@@ -1804,10 +1969,11 @@ function ToastContainer({ toasts }) {
   );
 }
 
-function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneKind }) {
+function FilterPanel({ hiddenTypes, hiddenZoneKinds, hiddenCitySizes, onToggleType, onToggleZoneKind, onToggleCitySize }) {
   const [open, setOpen] = useState(false);
   const [pinsOpen, setPinsOpen] = useState(false);
   const [zonesOpen, setZonesOpen] = useState(false);
+  const [citiesOpen, setCitiesOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -1815,7 +1981,7 @@ function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneK
     const t = setTimeout(() => document.addEventListener("mousedown", close), 0);
     return () => { clearTimeout(t); document.removeEventListener("mousedown", close); };
   }, [open]);
-  const activeCount = hiddenTypes.size + hiddenZoneKinds.size;
+  const activeCount = hiddenTypes.size + hiddenZoneKinds.size + hiddenCitySizes.size;
   const hiddenPinCount = hiddenTypes.size;
   const hiddenZoneCount = hiddenZoneKinds.size;
 
@@ -1830,6 +1996,7 @@ function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneK
       <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : dotColor, border: `1.5px solid ${dotColor}`, flexShrink: 0, transition: "background-color 0.15s" }} />
     </button>
   );
+
 
   return (
     <div ref={ref} className="relative" style={{ pointerEvents: "auto" }}>
@@ -1881,6 +2048,25 @@ function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneK
             <div style={{ borderTop: "1px solid #2a1808" }}>
               {filterRow(() => onToggleZoneKind("environmental"), AlertTriangle, "Environmental", hiddenZoneKinds.has("environmental"), "#c4641e")}
               {filterRow(() => onToggleZoneKind("faction"), Crown, "Faction", hiddenZoneKinds.has("faction"), "#9333ea")}
+            </div>
+          )}
+          {/* Settlements section */}
+          <button onClick={() => setCitiesOpen(o => !o)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                  style={{ fontFamily: "'IM Fell English SC', serif", color: "#a89070", fontSize: 11, borderTop: "1px solid #2a1808" }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+            <Landmark size={11} style={{ flexShrink: 0 }} />
+            <span className="uppercase tracking-widest flex-1" style={{ letterSpacing: "0.1em" }}>
+              Settlements {hiddenCitySizes.size > 0 && <span style={{ color: "#c4641e", fontSize: 10 }}>({hiddenCitySizes.size} hidden)</span>}
+            </span>
+            <ChevronDown size={11} style={{ transition: "transform 0.2s", transform: citiesOpen ? "rotate(180deg)" : "none" }} />
+          </button>
+          {citiesOpen && (
+            <div style={{ borderTop: "1px solid #2a1808" }}>
+              {Object.entries(CITY_SIZES).map(([key, s]) =>
+                filterRow(() => onToggleCitySize(key), s.icon, s.label, hiddenCitySizes.has(key), s.color)
+              )}
             </div>
           )}
         </div>
