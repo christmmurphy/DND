@@ -25,6 +25,21 @@
       70%  { transform: translate(-50%, -90%) scale(1.1); opacity: 1; }
       100% { transform: translate(-50%, -100%) scale(1); }
     }
+    @keyframes dangerRing {
+      0%   { transform: scale(1);   opacity: 0.7; }
+      100% { transform: scale(3);   opacity: 0; }
+    }
+    @keyframes slideInPanel {
+      from { transform: translateX(100%); }
+      to   { transform: translateX(0); }
+    }
+    @keyframes toastPop {
+      0%   { transform: translateY(12px); opacity: 0; }
+      100% { transform: translateY(0);    opacity: 1; }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
     .splash {
       position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
       font-family: 'IM Fell English', serif; font-style: italic; color: #5c4030;
@@ -143,6 +158,8 @@ const ChevronDown = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9"/></Svg>
 const Brush     = (p) => <Svg {...p}><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.07"/><path d="M7.07 14.94c-1.31 2.91-1.52 3.94-1.07 4.39.45.45 1.48.24 4.39-1.07"/><path d="M3 21l4-1-3-3Z"/></Svg>;
 const Undo2     = (p) => <Svg {...p}><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></Svg>;
 const Redo2     = (p) => <Svg {...p}><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/></Svg>;
+const Check     = (p) => <Svg {...p}><polyline points="20 6 9 17 4 12"/></Svg>;
+const Download  = (p) => <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></Svg>;
 
 // ============================================================
 //  Constants
@@ -350,6 +367,13 @@ function MapCanvas({ mapId, mapName }) {
   const [snapshotsOpen, setSnapshotsOpen] = useState(false);
   const [snapshots, setSnapshots]   = useState([]);
   const [snapshotStatus, setSnapshotStatus] = useState("idle");
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback((message, type = "success") => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  }, []);
 
   // Undo / redo — track add/delete operations only (not text edits)
   const [undoStack, setUndoStack] = useState([]);
@@ -478,9 +502,7 @@ function MapCanvas({ mapId, mapName }) {
   }, [loaded, saveStatus, map, mapId]);
 
   // ---------- Map upload ----------
-  const handleMapUpload = async (e) => {
-    const file = e.target.files?.[0]; e.target.value = "";
-    if (!file) return;
+  const uploadFile = useCallback(async (file) => {
     if (!file.type.startsWith("image/")) { setStorageError("Please choose an image file."); return; }
     setStorageError(null); setSaveStatus("saving");
     try {
@@ -490,12 +512,19 @@ function MapCanvas({ mapId, mapName }) {
       setMap(mapImageUrl(mapId, lastMapVersionRef.current));
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
-    } catch (err) { setSaveStatus("error"); setStorageError("Upload failed: " + err.message); }
+      addToast("Chart uploaded.");
+    } catch (err) { setSaveStatus("error"); setStorageError("Upload failed: " + err.message); addToast("Upload failed.", "error"); }
+  }, [mapId, addToast]);
+
+  const handleMapUpload = async (e) => {
+    const file = e.target.files?.[0]; e.target.value = "";
+    if (!file) return;
+    uploadFile(file);
   };
 
   // ---------- Snapshots ----------
   const handleSaveSnapshot = async () => {
-    const label = prompt("Snapshot label (leave blank for timestamp):");
+    const label = prompt("Label this snapshot (optional — leave blank for auto-timestamp):");
     if (label === null) return;
     setSnapshotStatus("saving");
     try {
@@ -503,7 +532,18 @@ function MapCanvas({ mapId, mapName }) {
       setSnapshots(prev => [...prev, snap]);
       setSnapshotStatus("saved");
       setTimeout(() => setSnapshotStatus("idle"), 1500);
-    } catch (e) { setSnapshotStatus("error"); alert("Snapshot failed: " + e.message); }
+      addToast("Snapshot saved.");
+    } catch (e) { setSnapshotStatus("error"); addToast("Snapshot failed: " + e.message, "error"); }
+  };
+
+  const handleDownloadMapData = () => {
+    const payload = { map: mapName, pins, zones, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${mapName.replace(/\s+/g, "_").toLowerCase()}_data.json`;
+    a.click(); URL.revokeObjectURL(url);
+    addToast("Map data downloaded.");
   };
 
   const handleRestoreSnapshot = async (snap) => {
@@ -653,11 +693,25 @@ function MapCanvas({ mapId, mapName }) {
   const deletePin  = (id) => { pushToHistory(); setPins(prev => prev.filter(p => p.id !== id)); setEditingItem(null); setSelectedId(null); };
   const deleteZone = (id) => { pushToHistory(); setZones(prev => prev.filter(z => z.id !== id)); setEditingItem(null); setSelectedId(null); };
 
+  const focusOnItem = useCallback((cx, cy) => {
+    if (!imgContainerRef.current) return;
+    const imgW = imgContainerRef.current.clientWidth;
+    const imgH = imgContainerRef.current.clientHeight;
+    const targetZoom = Math.max(zoom, 2.5);
+    setPan({ x: -targetZoom * (cx * imgW - imgW / 2), y: -targetZoom * (cy * imgH - imgH / 2) });
+    setZoom(targetZoom);
+  }, [zoom]);
+
   const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
 
   const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", brush: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab" }[mode] || "cursor-default";
 
-  if (!loaded) return <div className="splash">Unfurling the chart…</div>;
+  if (!loaded) return (
+    <div className="splash flex-col gap-3">
+      <Compass size={48} style={{ color: "#5c4030", animation: "spin 3s linear infinite" }} />
+      <span style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 16 }}>Unfurling the chart…</span>
+    </div>
+  );
 
   return (
     <div className="w-full h-full relative overflow-hidden flex">
@@ -690,7 +744,7 @@ function MapCanvas({ mapId, mapName }) {
                     <div className="mb-3">
                       <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Hot Zones · {zones.length}</h3>
                       {zones.map(z => (
-                        <button key={z.id} onClick={() => { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); }}
+                        <button key={z.id} onClick={() => { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); const c = z.type === "path" ? z.points[Math.floor(z.points.length / 2)] : { x: z.x, y: z.y }; focusOnItem(c.x, c.y); }}
                                 className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5"
                                 style={{ border: `1.5px solid ${DANGER_LEVELS[z.dangerLevel].stroke}`, backgroundColor: DANGER_LEVELS[z.dangerLevel].fill }}>
                           <div className="flex items-center justify-between gap-2">
@@ -711,7 +765,7 @@ function MapCanvas({ mapId, mapName }) {
                         const T = PIN_TYPES[p.type] || PIN_TYPES.quest;
                         const Ico = T.icon;
                         return (
-                          <button key={p.id} onClick={() => { setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); }}
+                          <button key={p.id} onClick={() => { setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); focusOnItem(p.x, p.y); }}
                                   className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5 flex items-center gap-2.5"
                                   style={{ backgroundColor: "rgba(255, 250, 235, 0.6)", border: `1px solid ${T.color}66` }}>
                             <span className="flex items-center justify-center rounded-full flex-shrink-0" style={{ width: 24, height: 24, backgroundColor: T.color, color: "#f4e8d0" }}><Ico size={12} /></span>
@@ -728,21 +782,26 @@ function MapCanvas({ mapId, mapName }) {
               )}
             </div>
 
-            {/* Snapshots */}
+            {/* Snapshots + Download */}
             <div className="border-t" style={{ borderColor: "#8b6f47" }}>
               <button onClick={() => setSnapshotsOpen(o => !o)}
                       className="w-full flex items-center justify-between px-4 py-2.5 text-xs uppercase tracking-widest"
                       style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
-                <span className="flex items-center gap-1.5"><Camera size={13} /> Snapshots {snapshots.length > 0 && `· ${snapshots.length}`}</span>
+                <span className="flex items-center gap-1.5"><Camera size={13} /> Map Archives {snapshots.length > 0 && `· ${snapshots.length}`}</span>
                 <ChevronDown size={13} style={{ transform: snapshotsOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
               </button>
               {snapshotsOpen && (
-                <div className="px-4 pb-3">
+                <div className="px-4 pb-3 space-y-2">
                   <button onClick={handleSaveSnapshot}
-                          className="w-full flex items-center justify-center gap-1.5 py-1.5 mb-2 rounded text-xs"
+                          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs"
                           style={{ backgroundColor: "rgba(42, 24, 16, 0.12)", border: "1px solid #8b6f47", color: "#2a1810", fontFamily: "'IM Fell English SC', serif" }}>
                     <Camera size={12} />
-                    {snapshotStatus === "saving" ? "Saving…" : snapshotStatus === "saved" ? "✓ Saved" : "Take Snapshot"}
+                    {snapshotStatus === "saving" ? "Saving…" : snapshotStatus === "saved" ? "✓ Saved" : "Snapshot Current Map Data"}
+                  </button>
+                  <button onClick={handleDownloadMapData}
+                          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs"
+                          style={{ backgroundColor: "rgba(42, 24, 16, 0.08)", border: "1px solid #8b6f47", color: "#2a1810", fontFamily: "'IM Fell English SC', serif" }}>
+                    <Download size={12} /> Download Current Map Data
                   </button>
                   {snapshots.length === 0
                     ? <p className="text-xs text-center italic py-1" style={{ color: "#8b6f47" }}>No snapshots yet.</p>
@@ -751,7 +810,7 @@ function MapCanvas({ mapId, mapName }) {
                           <div key={snap.id} className="flex items-center gap-1 rounded px-2 py-1" style={{ backgroundColor: "rgba(255,250,235,0.5)", border: "1px solid #c4a86488" }}>
                             <div className="flex-1 min-w-0">
                               <div className="text-xs font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", color: "#2a1810" }}>{snap.label}</div>
-                              <div className="text-xs" style={{ color: "#8b6f47" }}>{new Date(snap.ts * 1000).toLocaleDateString()}</div>
+                              <div className="text-xs" style={{ color: "#8b6f47" }}>{new Date(snap.ts * 1000).toLocaleString()}</div>
                             </div>
                             <button onClick={() => handleRestoreSnapshot(snap)} title="Restore" className="p-1 rounded hover:bg-black/10" style={{ color: "#4a6741" }}><RotateCcw size={12} /></button>
                             <button onClick={() => handleDeleteSnapshot(snap)} title="Delete" className="p-1 rounded hover:bg-black/10" style={{ color: "#8b1a1a" }}><Trash2 size={12} /></button>
@@ -781,7 +840,7 @@ function MapCanvas({ mapId, mapName }) {
       {/* MAP AREA */}
       <main className="flex-1 relative overflow-hidden">
         {!map ? (
-          <UploadGate onPickFile={triggerFileSelect} error={storageError} />
+          <UploadGate onPickFile={triggerFileSelect} onDropFile={uploadFile} error={storageError} />
         ) : (
           <>
             {/* Toolbar */}
@@ -905,7 +964,7 @@ function MapCanvas({ mapId, mapName }) {
                     const D = DANGER_LEVELS[z.dangerLevel];
                     return (
                       <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
-                           style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, transform: "translate(-50%, -50%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, textShadow: "0 0 4px rgba(244, 232, 208, 0.9), 0 0 4px rgba(244, 232, 208, 0.9)", fontSize: Math.max(9, Math.min(14, z.radius * 130)) / zoom + "px", letterSpacing: "0.05em", fontWeight: 600, maxWidth: `${z.radius * 180}%`, lineHeight: 1.1 }}>{z.name}</div>
+                           style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, transform: "translate(-50%, -50%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: Math.max(9, Math.min(14, z.radius * 130)) / zoom + "px", letterSpacing: "0.05em", fontWeight: 700, maxWidth: `${z.radius * 180}%`, lineHeight: 1.1, backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2 }}>{z.name}</div>
                     );
                   })}
 
@@ -915,7 +974,20 @@ function MapCanvas({ mapId, mapName }) {
                     const mid = z.points[Math.floor(z.points.length / 2)];
                     return (
                       <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
-                           style={{ left: `${mid.x * 100}%`, top: `${mid.y * 100}%`, transform: "translate(-50%, -200%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, textShadow: "0 0 4px rgba(244, 232, 208, 0.9), 0 0 4px rgba(244, 232, 208, 0.9)", fontSize: 11 / zoom + "px", letterSpacing: "0.05em", fontWeight: 600, whiteSpace: "nowrap" }}>{z.name}</div>
+                           style={{ left: `${mid.x * 100}%`, top: `${mid.y * 100}%`, transform: "translate(-50%, -200%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: 11 / zoom + "px", letterSpacing: "0.05em", fontWeight: 700, whiteSpace: "nowrap", backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2 }}>{z.name}</div>
+                    );
+                  })}
+
+                  {/* Danger / combat pulse rings (behind pins) */}
+                  {pins.filter(p => p.type === "danger" || p.type === "combat").map(p => {
+                    const T = PIN_TYPES[p.type];
+                    const scale = 1 / Math.max(0.5, zoom * 0.7);
+                    return (
+                      <div key={"pulse-" + p.id} className="absolute pointer-events-none"
+                           style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${scale})`, transformOrigin: "bottom center", zIndex: 8 }}>
+                        <div style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out infinite" }} />
+                        <div style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out 1s infinite" }} />
+                      </div>
                     );
                   })}
 
@@ -929,17 +1001,29 @@ function MapCanvas({ mapId, mapName }) {
                               onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); } }}
                               className="absolute group"
                               style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: mode === "view" ? "pointer" : "inherit", zIndex: sel ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
-                        <div className="absolute" style={{ bottom: -3, left: "50%", transform: "translateX(-50%)", width: 18, height: 5, background: "radial-gradient(ellipse, rgba(42,24,16,0.5) 0%, transparent 70%)" }} />
+                        <div className="absolute" style={{ bottom: -3, left: "50%", transform: "translateX(-50%)", width: 22, height: 6, background: "radial-gradient(ellipse, rgba(42,24,16,0.6) 0%, transparent 70%)" }} />
                         <div className="relative flex items-center justify-center transition-transform group-hover:scale-110"
-                             style={{ width: 32, height: 38, filter: sel ? `drop-shadow(0 0 6px ${T.glow})` : "drop-shadow(0 2px 3px rgba(0,0,0,0.4))" }}>
-                          <svg width="32" height="38" viewBox="0 0 32 38" className="absolute inset-0">
-                            <path d="M16 0 C7 0 1 7 1 15 C1 24 16 38 16 38 C16 38 31 24 31 15 C31 7 25 0 16 0 Z" fill={T.color} stroke="#2a1810" strokeWidth="1.5" />
-                            <circle cx="16" cy="14" r="9" fill="#f4e8d0" />
+                             style={{ width: 36, height: 44, filter: sel ? `drop-shadow(0 0 8px ${T.glow}) drop-shadow(0 0 3px ${T.glow})` : `drop-shadow(0 2px 5px rgba(0,0,0,0.75)) drop-shadow(0 0 10px rgba(255,255,255,0.2))` }}>
+                          <svg width="36" height="44" viewBox="0 0 36 44" className="absolute inset-0">
+                            {/* White contrast outline */}
+                            <path d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="3.5" />
+                            {/* Main body */}
+                            <path d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill={T.color} stroke="#1a0e08" strokeWidth="1.5" />
+                            {/* Inner circle */}
+                            <circle cx="18" cy="16" r="10" fill="white" />
                           </svg>
-                          <div className="relative" style={{ marginTop: -8, color: T.color }}><Ico size={13} strokeWidth={2.5} /></div>
+                          <div className="relative" style={{ marginTop: -8, color: T.color }}><Ico size={15} strokeWidth={2.5} /></div>
                         </div>
-                        <div className="absolute left-1/2 -translate-x-1/2 -top-7 px-2 py-0.5 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none"
-                             style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", fontFamily: "'IM Fell English', serif", border: "1px solid #8b6f47" }}>{p.title}</div>
+                        {/* Enhanced tooltip */}
+                        <div className="absolute left-1/2 -translate-x-1/2 -top-14 opacity-0 group-hover:opacity-100 pointer-events-none"
+                             style={{ transition: "opacity 0.15s" }}>
+                          <div className="px-2.5 py-1.5 rounded-sm whitespace-nowrap"
+                               style={{ backgroundColor: "rgba(24, 14, 8, 0.96)", border: `1px solid ${T.color}99`, boxShadow: `0 0 14px ${T.glow}55` }}>
+                            <div style={{ fontFamily: "'IM Fell English', serif", fontSize: 13, color: "#f4e8d0", fontWeight: 600 }}>{p.title}</div>
+                            <div style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 10, color: T.glow, textTransform: "uppercase", letterSpacing: "0.06em" }}>{T.label}</div>
+                          </div>
+                          <div style={{ width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `6px solid ${T.color}99`, margin: "0 auto" }} />
+                        </div>
                       </button>
                     );
                   })}
@@ -955,10 +1039,16 @@ function MapCanvas({ mapId, mapName }) {
       {editingObj && (
         <EditPanel item={editingObj} kind={editingItem.kind}
                    onClose={() => { setEditingItem(null); setSelectedId(null); }}
-                   onUpdatePin={(patch) => updatePin(editingObj.id, patch)}
-                   onUpdateZone={(patch) => updateZone(editingObj.id, patch)}
+                   onSave={(draft) => {
+                     if (editingItem.kind === "pin") updatePin(editingObj.id, draft);
+                     else updateZone(editingObj.id, draft);
+                     setEditingItem(null); setSelectedId(null);
+                     addToast("Changes saved.");
+                   }}
                    onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)} />
       )}
+
+      <ToastContainer toasts={toasts} />
 
       {storageError && map && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 px-3 py-2 rounded text-sm flex items-center gap-2"
@@ -988,11 +1078,15 @@ function ToolbarBtn({ active, disabled, onClick, icon: Icon, label, title: title
   );
 }
 
-function UploadGate({ onPickFile, error }) {
+function UploadGate({ onPickFile, onDropFile, error }) {
+  const [dragOver, setDragOver] = useState(false);
   return (
-    <div className="absolute inset-0 flex items-center justify-center p-8">
+    <div className="absolute inset-0 flex items-center justify-center p-8"
+         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }}
+         onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) onDropFile(f); }}>
       <div className="max-w-md w-full text-center px-8 py-10 rounded relative"
-           style={{ backgroundColor: "rgba(244, 232, 208, 0.92)", border: "2px solid #5c4030", boxShadow: "0 12px 40px rgba(42, 24, 16, 0.3), inset 0 0 60px rgba(184, 134, 11, 0.08)" }}>
+           style={{ backgroundColor: "rgba(244, 232, 208, 0.92)", border: dragOver ? "2px dashed #8b6f47" : "2px solid #5c4030", boxShadow: dragOver ? "0 0 0 4px rgba(139,111,71,0.25), 0 12px 40px rgba(42,24,16,0.3)" : "0 12px 40px rgba(42,24,16,0.3), inset 0 0 60px rgba(184,134,11,0.08)", transform: dragOver ? "scale(1.02)" : "scale(1)", transition: "transform 0.15s, box-shadow 0.15s" }}>
         {["top-1 left-1", "top-1 right-1 rotate-90", "bottom-1 right-1 rotate-180", "bottom-1 left-1 -rotate-90"].map((pos, i) => (
           <div key={i} className={`absolute ${pos}`} style={{ color: "#5c4030" }}>
             <svg width="20" height="20" viewBox="0 0 20 20"><path d="M1 1 L10 1 M1 1 L1 10 M1 1 L7 7" fill="none" stroke="currentColor" strokeWidth="1" /></svg>
@@ -1000,9 +1094,9 @@ function UploadGate({ onPickFile, error }) {
         ))}
         <Compass size={48} className="mx-auto mb-3" style={{ color: "#5c4030" }} />
         <h2 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 28, letterSpacing: "0.04em" }}>Chart Awaits</h2>
-        <p className="mt-2 mb-5" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", color: "#5c4030" }}>Begin by hoisting your map aboard.</p>
+        <p className="mt-2 mb-1" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", color: "#5c4030" }}>Drop a map image here, or</p>
         <button onClick={onPickFile}
-                className="inline-flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded"
+                className="inline-flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded mt-3"
                 style={{ backgroundColor: "#2a1810", color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em", border: "1px solid #8b6f47" }}>
           <Upload size={16} /> Upload Chart
         </button>
@@ -1016,24 +1110,36 @@ function UploadGate({ onPickFile, error }) {
   );
 }
 
-function EditPanel({ item, kind, onClose, onUpdatePin, onUpdateZone, onDelete }) {
+function EditPanel({ item, kind, onClose, onSave, onDelete }) {
+  const [draft, setDraft] = useState({ ...item });
+  const updateDraft = (patch) => setDraft(d => ({ ...d, ...patch }));
   return (
     <div className="absolute right-0 top-0 h-full w-full sm:w-96 sm:max-w-[90vw] z-30 shadow-2xl overflow-y-auto"
-         style={{ backgroundColor: "rgba(244, 232, 208, 0.97)", borderLeft: "2px solid #5c4030", fontFamily: "'EB Garamond', serif" }}>
+         style={{ backgroundColor: "rgba(244, 232, 208, 0.97)", borderLeft: "2px solid #5c4030", fontFamily: "'EB Garamond', serif", animation: "slideInPanel 0.25s cubic-bezier(0.16, 1, 0.3, 1)" }}>
       <div className="px-5 py-4 flex items-center justify-between border-b sticky top-0"
            style={{ borderColor: "#8b6f47", backgroundColor: "rgba(244, 232, 208, 0.98)", backdropFilter: "blur(4px)" }}>
         <h3 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 18, color: "#2a1810", letterSpacing: "0.04em" }}>
           {kind === "pin" ? "Pin Inscription" : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
         </h3>
-        <button onClick={onClose} className="p-1 rounded hover:bg-black/10"><X size={20} style={{ color: "#5c4030" }} /></button>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => onSave(draft)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs"
+                  style={{ backgroundColor: "#2a4a1a", color: "#c8f0a8", border: "1px solid #4a6741", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.05em" }}
+                  title="Save changes">
+            <Check size={14} /> Save
+          </button>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-black/10" title="Discard changes">
+            <X size={18} style={{ color: "#5c4030" }} />
+          </button>
+        </div>
       </div>
       <div className="px-5 py-4 space-y-4">
-        {kind === "pin" ? <PinEditor item={item} onUpdate={onUpdatePin} /> : <ZoneEditor item={item} onUpdate={onUpdateZone} />}
+        {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} /> : <ZoneEditor item={draft} onUpdate={updateDraft} />}
         <div className="pt-3 border-t" style={{ borderColor: "#8b6f47" }}>
           <button onClick={() => { if (confirm(`Remove this ${kind}?`)) onDelete(); }}
                   className="flex items-center gap-2 px-3 py-1.5 text-sm rounded"
                   style={{ color: "#8b1a1a", border: "1px solid #8b1a1a", backgroundColor: "transparent" }}>
-            <Trash2 size={14} /> Strike from the chart
+            <Trash2 size={14} /> {kind === "pin" ? "Remove Pin" : "Remove Zone"}
           </button>
         </div>
       </div>
@@ -1098,6 +1204,21 @@ function ZoneEditor({ item, onUpdate }) {
       <div><FieldLabel>Description</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 80, resize: "vertical", lineHeight: 1.5 }} placeholder="What characterizes this region?" /></div>
       <div><FieldLabel>Random Encounter Table</FieldLabel><textarea value={item.encounters} onChange={(e) => onUpdate({ encounters: e.target.value })} style={{ ...inputStyle(), minHeight: 160, resize: "vertical", lineHeight: 1.5, fontFamily: "'IM Fell English', serif" }} placeholder={"1-2: A merrow ambush from the kelp.\n3-4: Caustrix raiders demand toll.\n5: Bryce Eel coiling beneath the keel.\n6: A waterlogged, whispering corpse."} /></div>
     </>
+  );
+}
+
+function ToastContainer({ toasts }) {
+  if (!toasts.length) return null;
+  return (
+    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div key={t.id} className="flex items-center gap-2 px-4 py-2.5 rounded-sm shadow-xl"
+             style={{ animation: "toastPop 0.3s cubic-bezier(0.16, 1, 0.3, 1)", backgroundColor: t.type === "error" ? "rgba(139,26,26,0.97)" : "rgba(28,16,8,0.95)", color: "#f4e8d0", border: t.type === "error" ? "1px solid #8b1a1a" : "1px solid #8b6f47", fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.4)", whiteSpace: "nowrap" }}>
+          {t.type === "error" ? <AlertTriangle size={13} style={{ flexShrink: 0 }} /> : <Check size={13} style={{ flexShrink: 0 }} />}
+          {t.message}
+        </div>
+      ))}
+    </div>
   );
 }
 
