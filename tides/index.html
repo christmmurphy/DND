@@ -52,6 +52,8 @@
     .zone-path:hover polyline  { stroke-opacity: 0.75 !important; }
     .pin-marker { opacity: 0.62; transition: opacity 0.25s ease; }
     .pin-marker:hover, .pin-marker.pin-selected, .pin-marker.pin-moving { opacity: 1; }
+    .pin-marker .pin-hover-tip { display: none; }
+    .pin-marker:hover .pin-hover-tip { display: block; }
     .pin-tooltip-enter { opacity: 0; transform: translateY(6px); }
     .pin-tooltip-enter-active { opacity: 1; transform: translateY(0); transition: opacity 0.2s, transform 0.2s; }
     .splash {
@@ -65,6 +67,7 @@
   </style>
 </head>
 <body>
+  <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; window.scrollTo(0, 0);</script>
   <div id="root"><div class="splash">Unfurling the chart…</div></div>
 
   <script type="text/babel" data-presets="react">
@@ -188,6 +191,7 @@ const Shield    = (p) => <Svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8
 const Key       = (p) => <Svg {...p}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></Svg>;
 const Moon      = (p) => <Svg {...p}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></Svg>;
 const Gem       = (p) => <Svg {...p}><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></Svg>;
+const MouseIcon = (p) => <Svg {...p}><rect x="6" y="3" width="12" height="18" rx="6"/><line x1="12" x2="12" y1="7" y2="11"/></Svg>;
 
 // ============================================================
 //  Constants
@@ -427,6 +431,7 @@ function MapCanvas({ mapId, mapName }) {
   const [toasts, setToasts] = useState([]);
   const [hiddenTypes, setHiddenTypes] = useState(new Set());
   const [hiddenZoneKinds, setHiddenZoneKinds] = useState(new Set());
+  const [scrollMode, setScrollMode] = useState(false);
 
   const addToast = useCallback((message, type = "success") => {
     const id = Date.now() + Math.random();
@@ -744,7 +749,10 @@ function MapCanvas({ mapId, mapName }) {
   }, [drawing, panning]);
 
   const handleWheel = (e) => {
-    e.preventDefault();
+    if (scrollMode) {
+      setPan(p => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+      return;
+    }
     setZoom(z => Math.max(0.5, Math.min(6, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
   };
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
@@ -954,6 +962,7 @@ function MapCanvas({ mapId, mapName }) {
                  style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
               <ToolbarBtn active={mode === "view"}  onClick={() => setMode("view")}  icon={Eye}        label="Read" />
               <ToolbarBtn active={mode === "pan"}   onClick={() => setMode("pan")}   icon={Move}       label="Pan" />
+              <ToolbarBtn active={scrollMode}       onClick={() => setScrollMode(s => !s)} icon={MouseIcon} label="Scroll" title={scrollMode ? "Scroll mode ON — mouse wheel pans map" : "Scroll mode OFF — mouse wheel zooms map"} />
               <Sep />
               <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}    label="Pin" />
               <ToolbarBtn active={mode === "zone"} onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
@@ -998,7 +1007,7 @@ function MapCanvas({ mapId, mapName }) {
             {/* Map canvas */}
             <div ref={wrapRef}
                  className={`w-full h-full overflow-hidden ${cursorClass}`}
-                 style={{ touchAction: "none" }}
+                 style={{ touchAction: scrollMode ? "auto" : "none" }}
                  onWheel={handleWheel}
                  onPointerDown={handleMapPointerDown}
                  onPointerMove={handleMapPointerMove}
@@ -1219,8 +1228,8 @@ function MapCanvas({ mapId, mapName }) {
                           <div className="relative" style={{ marginTop: -8, color: T.color, transition: "transform 0.2s" }}><Ico size={15} strokeWidth={2.5} /></div>
                         </div>
                         {/* Magical tooltip */}
-                        <div className="absolute left-1/2 -translate-x-1/2 -top-16 opacity-0 group-hover:opacity-100 pointer-events-none"
-                             style={{ transition: "opacity 0.2s, transform 0.2s", transform: "translateY(4px)", ["--tw-translate-y"]: "0px" }}>
+                        <div className="absolute left-1/2 -translate-x-1/2 -top-16 pin-hover-tip pointer-events-none"
+                             style={{ transition: "opacity 0.2s, transform 0.2s" }}>
                           <div className="px-3 py-2 rounded-sm whitespace-nowrap relative overflow-hidden"
                                style={{ backgroundColor: "rgba(18, 10, 4, 0.97)", border: `1px solid ${T.color}88`, boxShadow: `0 0 18px ${T.glow}44, 0 4px 12px rgba(0,0,0,0.5)` }}>
                             <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${T.glow}12 0%, transparent 60%)`, pointerEvents: "none" }} />
@@ -1287,7 +1296,7 @@ function ToolbarBtn({ active, disabled, onClick, icon: Icon, label, title: title
             className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs uppercase tracking-wider"
             style={{ color: disabled ? "#5c4030" : (active ? "#2a1810" : "#f4e8d0"), backgroundColor: active ? "#e8d4a8" : "transparent", opacity: disabled ? 0.35 : 1, fontFamily: "'IM Fell English SC', serif", cursor: disabled ? "default" : "pointer" }}>
       <Icon size={14} />
-      {label && <span className="hidden sm:inline">{label}</span>}
+      {label && <span className="hidden 2xl:inline">{label}</span>}
     </button>
   );
 }
