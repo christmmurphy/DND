@@ -1,6 +1,20 @@
 <?php
 declare(strict_types=1);
 
+// Capture all output so PHP notices/warnings never corrupt JSON responses.
+ob_start();
+
+// Convert PHP fatal errors to JSON so the browser sees a real message.
+register_shutdown_function(function () {
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_PARSE, E_RECOVERABLE_ERROR], true)) {
+        while (ob_get_level()) ob_end_clean();
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['error' => 'Server error: ' . $err['message'] . ' (' . basename($err['file']) . ':' . $err['line'] . ')']);
+    }
+});
+
 // ===== Configuration =====
 const BASE_DIR      = __DIR__ . '/data';
 const MAX_MAP_BYTES = 12 * 1024 * 1024;
@@ -8,6 +22,8 @@ const SECRET        = '';
 
 // ===== Helpers =====
 function send_json(array $data, int $status = 200): void {
+    // Discard any buffered notices/warnings before sending clean JSON.
+    while (ob_get_level()) ob_end_clean();
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
@@ -246,16 +262,30 @@ switch ($action) {
         if (!$mapId || !valid_id($mapId)) send_json(['error' => 'Bad map id'], 400);
         $body = json_decode(file_get_contents('php://input') ?: '', true);
         $dataUrl = is_array($body) ? (string)($body['data'] ?? '') : '';
-        if (!preg_match('/^data:(image\/[a-z0-9+.\-]+);base64,(.+)$/i', $dataUrl, $m))
+        unset($body);
+
+        // Split at the comma first so the regex only runs on the tiny header,
+        // not the multi-megabyte base64 string (avoids PCRE backtrack-limit errors).
+        $comma = strpos($dataUrl, ',');
+        if ($comma === false) send_json(['error' => 'Invalid data URL'], 400);
+        $urlHeader = substr($dataUrl, 0, $comma);
+        if (!preg_match('/^data:(image\/[a-z0-9+.\-]+);base64$/i', $urlHeader, $m))
             send_json(['error' => 'Invalid data URL'], 400);
-        $binary = base64_decode($m[2], true);
+        $contentType = $m[1];
+        $b64 = substr($dataUrl, $comma + 1);
+        unset($dataUrl, $urlHeader, $m);
+
+        $binary = base64_decode($b64, true);
+        unset($b64);
         if ($binary === false) send_json(['error' => 'Invalid base64'], 400);
         if (strlen($binary) > MAX_MAP_BYTES) send_json(['error' => 'Map exceeds ' . (MAX_MAP_BYTES / 1024 / 1024) . ' MB'], 413);
         ensure_map_dir($mapId);
-        if (file_put_contents(map_bin($mapId), $binary) === false) send_json(['error' => 'Could not write map'], 500);
-        @file_put_contents(map_type($mapId), $m[1]);
+        if (file_put_contents(map_bin($mapId), $binary) === false)
+            send_json(['error' => 'Could not write map (check folder permissions on ' . map_dir($mapId) . ')'], 500);
+        unset($binary);
+        @file_put_contents(map_type($mapId), $contentType);
         clearstatcache(true, map_bin($mapId));
-        send_json(['ok' => true, 'mapVersion' => filemtime(map_bin($mapId)), 'size' => strlen($binary)]);
+        send_json(['ok' => true, 'mapVersion' => filemtime(map_bin($mapId)), 'size' => filesize(map_bin($mapId))]);
     }
 
     // ------------------------------------------------------------------
