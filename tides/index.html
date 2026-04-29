@@ -245,16 +245,12 @@ function getPinType(p) {
 }
 
 const FACTION_COLORS = [
-  "#1a2d8b", // royal blue
-  "#5c1a8b", // imperial purple
-  "#8b1a5c", // deep rose
-  "#0a5c7a", // ocean teal
-  "#4a0a8b", // midnight violet
-  "#1a5c8b", // cobalt
-  "#8b0a4a", // magenta
-  "#003c5c", // dark teal
-  "#2a1a6b", // indigo
-  "#6b006b", // dark orchid
+  // Vivid — eye-catching primaries
+  "#e01515", "#e01590", "#c015e0", "#6015e0", "#1535e0", "#15a0e0",
+  // Mid — balanced heraldic
+  "#9b0000", "#9b006b", "#7a009b", "#3a0a9b", "#0a2d9b", "#0a6b9b",
+  // Deep — dark & dramatic
+  "#5c0000", "#5c003c", "#420a5c", "#1a0a5c", "#0a1a5c", "#003c5c",
 ];
 
 function getZoneColors(z) {
@@ -493,6 +489,7 @@ function MapCanvas({ mapId, mapName }) {
   const [showReplaceLabel, setShowReplaceLabel] = useState(false);
   const replaceLabelTimer = useRef(null);
   const [liveEditPin, setLiveEditPin] = useState(null);
+  const [liveEditZone, setLiveEditZone] = useState(null);
 
   const addToast = useCallback((message, type = "success") => {
     const id = Date.now() + Math.random();
@@ -1140,7 +1137,8 @@ function MapCanvas({ mapId, mapName }) {
 
                     {/* Circle zones */}
                     {visibleZones.filter(z => !z.type || z.type === "circle").map(z => {
-                      const D = getZoneColors(z);
+                      const dz = (liveEditZone?.id === z.id) ? { ...z, ...liveEditZone } : z;
+                      const D = getZoneColors(dz);
                       const sel = selectedId === z.id;
                       const highlighted = sel || hoveredZoneId === z.id;
                       const canEdit = sel && (mode === "view" || mode === "movepin");
@@ -1170,7 +1168,6 @@ function MapCanvas({ mapId, mapName }) {
                                   strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke">
                             {sel && <animate attributeName="stroke-dashoffset" values="0;0.04" dur="2s" repeatCount="indefinite" />}
                           </circle>
-                          {/* Resize handle — visible only when selected */}
                           {canEdit && (
                             <circle cx={z.x + z.radius} cy={z.y} r={handleR}
                                     fill="white" stroke={D.stroke} strokeWidth="0.003" vectorEffect="non-scaling-stroke"
@@ -1196,7 +1193,8 @@ function MapCanvas({ mapId, mapName }) {
 
                     {/* Path (brush) zones */}
                     {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
-                      const D = getZoneColors(z);
+                      const dz = (liveEditZone?.id === z.id) ? { ...z, ...liveEditZone } : z;
+                      const D = getZoneColors(dz);
                       const sel = selectedId === z.id;
                       const highlighted = sel || hoveredZoneId === z.id;
                       const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
@@ -1253,7 +1251,8 @@ function MapCanvas({ mapId, mapName }) {
 
                   {/* Circle zone labels */}
                   {visibleZones.filter(z => !z.type || z.type === "circle").map(z => {
-                    const D = getZoneColors(z);
+                    const dz = (liveEditZone?.id === z.id) ? { ...z, ...liveEditZone } : z;
+                    const D = getZoneColors(dz);
                     const sel = selectedId === z.id;
                     const baseSize = Math.max(9, Math.min(14, z.radius * 130)) / zoom;
                     return (
@@ -1268,7 +1267,8 @@ function MapCanvas({ mapId, mapName }) {
 
                   {/* Path zone labels */}
                   {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
-                    const D = getZoneColors(z);
+                    const dz = (liveEditZone?.id === z.id) ? { ...z, ...liveEditZone } : z;
+                    const D = getZoneColors(dz);
                     const sel = selectedId === z.id;
                     const mid = z.points[Math.floor(z.points.length / 2)];
                     return (
@@ -1390,12 +1390,15 @@ function MapCanvas({ mapId, mapName }) {
 
       {editingObj && (
         <EditPanel item={editingObj} kind={editingItem.kind}
-                   onVisualChange={(patch) => setLiveEditPin(prev => ({ ...(prev?.id === editingObj.id ? prev : { id: editingObj.id }), ...patch }))}
-                   onClose={() => { setEditingItem(null); setSelectedId(null); setLiveEditPin(null); }}
+                   onVisualChange={(patch) => {
+                     if (editingItem.kind === "pin") setLiveEditPin(prev => ({ ...(prev?.id === editingObj.id ? prev : { id: editingObj.id }), ...patch }));
+                     else setLiveEditZone(prev => ({ ...(prev?.id === editingObj.id ? prev : { id: editingObj.id }), ...patch }));
+                   }}
+                   onClose={() => { setEditingItem(null); setSelectedId(null); setLiveEditPin(null); setLiveEditZone(null); }}
                    onSave={(draft) => {
                      if (editingItem.kind === "pin") updatePin(editingObj.id, draft);
                      else updateZone(editingObj.id, draft);
-                     setEditingItem(null); setSelectedId(null); setLiveEditPin(null);
+                     setEditingItem(null); setSelectedId(null); setLiveEditPin(null); setLiveEditZone(null);
                      addToast("Changes saved.");
                    }}
                    onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)}
@@ -1525,7 +1528,7 @@ function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove, onVisua
       {/* key forces this subtree to remount (and re-animate) when the selected item changes */}
       <div key={item.id}>
         <div className="px-5 py-4 space-y-4">
-          {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} onVisualChange={onVisualChange} /> : <ZoneEditor item={draft} onUpdate={updateDraft} />}
+          {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} onVisualChange={onVisualChange} /> : <ZoneEditor item={draft} onUpdate={updateDraft} onVisualChange={onVisualChange} />}
         </div>
       </div>
     </div>
@@ -1633,9 +1636,10 @@ function PinEditor({ item, onUpdate, onVisualChange }) {
   );
 }
 
-function ZoneEditor({ item, onUpdate }) {
+function ZoneEditor({ item, onUpdate, onVisualChange }) {
   const isFaction = item.zoneKind === "faction";
   const factionColor = item.factionColor || "#6b1a8b";
+  const visual = (patch) => { onUpdate(patch); onVisualChange?.(patch); };
   return (
     <>
       <div>
@@ -1644,7 +1648,7 @@ function ZoneEditor({ item, onUpdate }) {
           {[["environmental", "Environmental"], ["faction", "Faction"]].map(([val, label]) => {
             const active = (item.zoneKind || "environmental") === val;
             return (
-              <button key={val} onClick={() => onUpdate({ zoneKind: val, dangerLevel: val === "environmental" ? (item.dangerLevel || "medium") : undefined, factionName: val === "faction" ? (item.factionName || "") : undefined, factionColor: val === "faction" ? (item.factionColor || "#6b1a8b") : undefined })}
+              <button key={val} onClick={() => visual({ zoneKind: val, dangerLevel: val === "environmental" ? (item.dangerLevel || "medium") : undefined, factionName: val === "faction" ? (item.factionName || "") : undefined, factionColor: val === "faction" ? (item.factionColor || "#6b1a8b") : undefined })}
                       className="flex-1 py-1.5 text-xs uppercase tracking-wider"
                       style={{ fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em", backgroundColor: active ? "#5c4030" : "rgba(255,250,235,0.6)", color: active ? "#f4e8d0" : "#5c4030", borderRight: val === "environmental" ? "1px solid #8b6f47" : "none" }}>
                 {label}
@@ -1670,15 +1674,16 @@ function ZoneEditor({ item, onUpdate }) {
           </div>
           <div>
             <FieldLabel>Faction Colour</FieldLabel>
-            <div className="flex items-center gap-3">
-              <input type="color" value={factionColor} onChange={(e) => onUpdate({ factionColor: e.target.value })}
+            <div className="grid gap-1.5 mb-2" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+              {FACTION_COLORS.map(c => (
+                <button key={c} onClick={() => visual({ factionColor: c })}
+                        style={{ width: "100%", aspectRatio: "1", backgroundColor: c, borderRadius: 3, border: factionColor === c ? "2px solid #f4e8d0" : "2px solid transparent", boxShadow: factionColor === c ? `0 0 0 2px ${c}` : "none" }} />
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="color" value={factionColor} onChange={(e) => visual({ factionColor: e.target.value })}
                      style={{ width: 36, height: 30, border: "1px solid #8b6f47", borderRadius: 2, cursor: "pointer", padding: 1, backgroundColor: "transparent" }} />
-              <div className="flex gap-1.5 flex-wrap">
-                {FACTION_COLORS.map(c => (
-                  <button key={c} onClick={() => onUpdate({ factionColor: c })}
-                          style={{ width: 20, height: 20, backgroundColor: c, borderRadius: "50%", border: factionColor === c ? "2px solid #2a1810" : "2px solid transparent", outline: factionColor === c ? "2px solid " + c : "none" }} />
-                ))}
-              </div>
+              <span style={{ fontFamily: "'IM Fell English', serif", fontSize: 12, color: "#5c4030", fontStyle: "italic" }}>Custom colour</span>
             </div>
           </div>
         </>
@@ -1693,7 +1698,7 @@ function ZoneEditor({ item, onUpdate }) {
             {Object.entries(DANGER_LEVELS).map(([key, d]) => {
               const active = item.dangerLevel === key;
               return (
-                <button key={key} onClick={() => onUpdate({ dangerLevel: key })}
+                <button key={key} onClick={() => visual({ dangerLevel: key })}
                         className="py-1.5 rounded text-xs uppercase tracking-wider"
                         style={{ backgroundColor: active ? d.stroke : "transparent", color: active ? "#f4e8d0" : d.stroke, border: `1px solid ${d.stroke}`, fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em" }}>
                   {d.label}
