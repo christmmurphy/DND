@@ -40,6 +40,10 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    @keyframes contentFadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
     @keyframes magicShimmer {
       0%   { stroke-dashoffset: 0; }
       100% { stroke-dashoffset: -0.2; }
@@ -1326,6 +1330,9 @@ function UploadGate({ onPickFile, onDropFile, error }) {
 
 function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
   const [draft, setDraft] = useState({ ...item });
+  // Sync draft when the user switches to a different item — no flash because
+  // calling setState during render causes React to re-render synchronously.
+  if (draft.id !== item.id) setDraft({ ...item });
   const updateDraft = (patch) => setDraft(d => ({ ...d, ...patch }));
   return (
     <div className="absolute right-0 top-0 h-full w-full sm:w-96 sm:max-w-[90vw] z-30 shadow-2xl overflow-y-auto"
@@ -1355,14 +1362,17 @@ function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
           </button>
         </div>
       </div>
-      <div className="px-5 py-4 space-y-4">
-        {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} /> : <ZoneEditor item={draft} onUpdate={updateDraft} />}
-        <div className="pt-3 border-t" style={{ borderColor: "#8b6f47" }}>
-          <button onClick={() => { if (confirm(`Remove this ${kind}?`)) onDelete(); }}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm rounded"
-                  style={{ color: "#8b1a1a", border: "1px solid #8b1a1a", backgroundColor: "transparent" }}>
-            <Trash2 size={14} /> {kind === "pin" ? "Remove Pin" : "Remove Zone"}
-          </button>
+      {/* key forces this subtree to remount (and re-animate) when the selected item changes */}
+      <div key={item.id} style={{ animation: "contentFadeIn 0.18s ease-out" }}>
+        <div className="px-5 py-4 space-y-4">
+          {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} /> : <ZoneEditor item={draft} onUpdate={updateDraft} />}
+          <div className="pt-3 border-t" style={{ borderColor: "#8b6f47" }}>
+            <button onClick={() => { if (confirm(`Remove this ${kind}?`)) onDelete(); }}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm rounded"
+                    style={{ color: "#8b1a1a", border: "1px solid #8b1a1a", backgroundColor: "transparent" }}>
+              <Trash2 size={14} /> {kind === "pin" ? "Remove Pin" : "Remove Zone"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
