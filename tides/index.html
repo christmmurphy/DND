@@ -56,6 +56,8 @@
     .zone-path:hover polyline  { stroke-opacity: 0.75 !important; }
     .pin-marker { opacity: 0.62; transition: opacity 0.25s ease; }
     .pin-marker:hover, .pin-marker.pin-selected, .pin-marker.pin-moving { opacity: 1; }
+    .pin-pulse { animation-play-state: paused; opacity: 0; transition: opacity 0.3s; }
+    .pin-marker:hover .pin-pulse, .pin-marker.pin-selected .pin-pulse, .pin-marker.pin-moving .pin-pulse { animation-play-state: running; opacity: 1; }
     .pin-tooltip-enter { opacity: 0; transform: translateY(6px); }
     .pin-tooltip-enter-active { opacity: 1; transform: translateY(0); transition: opacity 0.2s, transform 0.2s; }
     .splash {
@@ -845,10 +847,12 @@ function MapCanvas({ mapId, mapName }) {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {zones.length > 0 && (
+                  {visibleZones.length > 0 && (
                     <div className="mb-3">
-                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Hot Zones · {zones.length}</h3>
-                      {zones.map(z => {
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
+                        Hot Zones · {visibleZones.length}{visibleZones.length < zones.length && <span style={{ color: "#8b6f47" }}> ({zones.length - visibleZones.length} hidden)</span>}
+                      </h3>
+                      {visibleZones.map(z => {
                         const D = getZoneColors(z);
                         const isFaction = z.zoneKind === "faction";
                         const kindLabel = isFaction ? (z.factionName || "Faction") : (DANGER_LEVELS[z.dangerLevel]?.label || "");
@@ -868,10 +872,12 @@ function MapCanvas({ mapId, mapName }) {
                       })}
                     </div>
                   )}
-                  {pins.length > 0 && (
+                  {visiblePins.length > 0 && (
                     <div>
-                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Pins · {pins.length}</h3>
-                      {pins.map(p => {
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
+                        Pins · {visiblePins.length}{visiblePins.length < pins.length && <span style={{ color: "#8b6f47" }}> ({pins.length - visiblePins.length} hidden)</span>}
+                      </h3>
+                      {visiblePins.map(p => {
                         const T = getPinType(p);
                         const Ico = T.icon;
                         return (
@@ -886,6 +892,11 @@ function MapCanvas({ mapId, mapName }) {
                           </button>
                         );
                       })}
+                    </div>
+                  )}
+                  {visiblePins.length === 0 && visibleZones.length === 0 && (pins.length > 0 || zones.length > 0) && (
+                    <div className="text-center py-8 px-4" style={{ color: "#8b6f47", fontStyle: "italic", fontFamily: "'IM Fell English', serif", fontSize: 13 }}>
+                      All items are hidden by filters.
                     </div>
                   )}
                 </div>
@@ -1143,19 +1154,6 @@ function MapCanvas({ mapId, mapName }) {
                     );
                   })}
 
-                  {/* Danger / combat pulse rings (behind pins) */}
-                  {visiblePins.filter(p => (p.type === "danger" || p.type === "combat") && !clusteredPinIds.has(p.id)).map(p => {
-                    const T = getPinType(p);
-                    const scale = 1 / Math.max(0.5, zoom * 0.7);
-                    return (
-                      <div key={"pulse-" + p.id} className="absolute pointer-events-none"
-                           style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${scale})`, transformOrigin: "bottom center", zIndex: 8 }}>
-                        <div style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out infinite" }} />
-                        <div style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out 1s infinite" }} />
-                      </div>
-                    );
-                  })}
-
                   {/* Cluster markers */}
                   {pinClusters.map(group => {
                     const cx = group.reduce((s, p) => s + p.x, 0) / group.length;
@@ -1204,6 +1202,11 @@ function MapCanvas({ mapId, mapName }) {
                               onPointerCancel={(e) => { if (movingPin === p.id) setMovingPin(null); }}
                               className={`absolute group pin-marker${sel ? " pin-selected" : ""}${isMoving ? " pin-moving" : ""}`}
                               style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: pinCursor, zIndex: sel || isMoving ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
+                        {/* Pulse rings — paused until hover/selected via .pin-pulse CSS */}
+                        {(p.type === "danger" || p.type === "combat") && <>
+                          <div className="pin-pulse" style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out infinite", pointerEvents: "none" }} />
+                          <div className="pin-pulse" style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out 1s infinite", pointerEvents: "none" }} />
+                        </>}
                         <div className="absolute" style={{ bottom: -3, left: "50%", transform: "translateX(-50%)", width: 22, height: 6, background: "radial-gradient(ellipse, rgba(42,24,16,0.6) 0%, transparent 70%)" }} />
                         <div className="relative flex items-center justify-center"
                              style={{ width: 36, height: 44, transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1), filter 0.2s", transform: isMoving ? "scale(1.2)" : "scale(1)", filter: sel || isMoving ? `drop-shadow(0 0 10px ${T.glow}) drop-shadow(0 0 4px ${T.glow})` : `drop-shadow(0 2px 5px rgba(0,0,0,0.75)) drop-shadow(0 0 10px rgba(255,255,255,0.2))` }}>
@@ -1223,8 +1226,8 @@ function MapCanvas({ mapId, mapName }) {
                           <div className="relative" style={{ marginTop: -8, color: T.color, transition: "transform 0.2s" }}><Ico size={15} strokeWidth={2.5} /></div>
                         </div>
                         {/* Magical tooltip */}
-                        <div className="absolute left-1/2 -translate-x-1/2 -top-16 opacity-0 group-hover:opacity-100 pointer-events-none"
-                             style={{ transition: "opacity 0.2s, transform 0.2s", transform: "translateY(4px)", ["--tw-translate-y"]: "0px" }}>
+                        <div className="absolute -top-16 opacity-0 group-hover:opacity-100 pointer-events-none"
+                             style={{ left: "50%", transform: "translateX(-50%)", transition: "opacity 0.2s" }}>
                           <div className="px-3 py-2 rounded-sm whitespace-nowrap relative overflow-hidden"
                                style={{ backgroundColor: "rgba(18, 10, 4, 0.97)", border: `1px solid ${T.color}88`, boxShadow: `0 0 18px ${T.glow}44, 0 4px 12px rgba(0,0,0,0.5)` }}>
                             <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${T.glow}12 0%, transparent 60%)`, pointerEvents: "none" }} />
@@ -1588,6 +1591,8 @@ function ToastContainer({ toasts }) {
 
 function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneKind }) {
   const [open, setOpen] = useState(false);
+  const [pinsOpen, setPinsOpen] = useState(false);
+  const [zonesOpen, setZonesOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -1596,6 +1601,21 @@ function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneK
     return () => { clearTimeout(t); document.removeEventListener("mousedown", close); };
   }, [open]);
   const activeCount = hiddenTypes.size + hiddenZoneKinds.size;
+  const hiddenPinCount = hiddenTypes.size;
+  const hiddenZoneCount = hiddenZoneKinds.size;
+
+  const filterRow = (onClick, icon, label, hidden, dotColor) => (
+    <button onClick={onClick}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
+            style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+      {React.createElement(icon, { size: 11, style: { color: dotColor, flexShrink: 0 } })}
+      <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>{label}</span>
+      <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : dotColor, border: `1.5px solid ${dotColor}`, flexShrink: 0, transition: "background-color 0.15s" }} />
+    </button>
+  );
+
   return (
     <div ref={ref} className="relative" style={{ pointerEvents: "auto" }}>
       <button onClick={() => setOpen(o => !o)}
@@ -1609,53 +1629,45 @@ function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneK
       </button>
       {open && (
         <div className="absolute bottom-full right-0 mb-2 rounded-sm shadow-2xl overflow-hidden"
-             style={{ backgroundColor: "rgba(22,12,6,0.97)", border: "1px solid #8b6f47", minWidth: 190, animation: "toastPop 0.2s ease-out" }}>
-          <div className="px-3 py-1.5 border-b text-xs uppercase tracking-widest"
-               style={{ borderColor: "#3a2010", color: "#a89070", fontFamily: "'IM Fell English SC', serif" }}>Pins</div>
-          {Object.entries(PIN_TYPES).map(([key, t]) => {
-            const Icon = t.icon; const hidden = hiddenTypes.has(key);
-            return (
-              <button key={key} onClick={() => onToggleType(key)}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
-                      style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                <Icon size={11} style={{ color: t.color, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>{t.label}</span>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : t.color, border: `1.5px solid ${t.color}`, flexShrink: 0, transition: "background-color 0.15s" }} />
-              </button>
-            );
-          })}
-          {(() => { const hidden = hiddenTypes.has("custom"); return (
-            <button onClick={() => onToggleType("custom")}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
-                    style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
-                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-              <Plus size={11} style={{ color: "#8b6f47", flexShrink: 0 }} />
-              <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>Custom</span>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : "#8b6f47", border: "1.5px solid #8b6f47", flexShrink: 0, transition: "background-color 0.15s" }} />
-            </button>
-          ); })()}
-          <div className="px-3 py-1.5 border-t border-b text-xs uppercase tracking-widest"
-               style={{ borderColor: "#3a2010", color: "#a89070", fontFamily: "'IM Fell English SC', serif" }}>Hot Zones</div>
-          {[
-            { key: "environmental", label: "Environmental", icon: AlertTriangle, color: "#c4641e" },
-            { key: "faction",       label: "Faction",       icon: Crown,         color: "#9333ea" },
-          ].map(({ key, label, icon: Icon, color }) => {
-            const hidden = hiddenZoneKinds.has(key);
-            return (
-              <button key={key} onClick={() => onToggleZoneKind(key)}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
-                      style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
-                <Icon size={11} style={{ color, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>{label}</span>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : color, border: `1.5px solid ${color}`, flexShrink: 0, transition: "background-color 0.15s" }} />
-              </button>
-            );
-          })}
+             style={{ backgroundColor: "rgba(22,12,6,0.97)", border: "1px solid #8b6f47", minWidth: 200, animation: "toastPop 0.2s ease-out" }}>
+          {/* Pins section */}
+          <button onClick={() => setPinsOpen(o => !o)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                  style={{ fontFamily: "'IM Fell English SC', serif", color: "#a89070", fontSize: 11 }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+            <MapPin size={11} style={{ flexShrink: 0 }} />
+            <span className="uppercase tracking-widest flex-1" style={{ letterSpacing: "0.1em" }}>
+              Pins {hiddenPinCount > 0 && <span style={{ color: "#c4641e", fontSize: 10 }}>({hiddenPinCount} hidden)</span>}
+            </span>
+            <ChevronDown size={11} style={{ transition: "transform 0.2s", transform: pinsOpen ? "rotate(180deg)" : "none" }} />
+          </button>
+          {pinsOpen && (
+            <div style={{ borderTop: "1px solid #2a1808" }}>
+              {Object.entries(PIN_TYPES).map(([key, t]) =>
+                filterRow(() => onToggleType(key), t.icon, t.label, hiddenTypes.has(key), t.color)
+              )}
+              {filterRow(() => onToggleType("custom"), Plus, "Custom", hiddenTypes.has("custom"), "#8b6f47")}
+            </div>
+          )}
+          {/* Hot Zones section */}
+          <button onClick={() => setZonesOpen(o => !o)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                  style={{ fontFamily: "'IM Fell English SC', serif", color: "#a89070", fontSize: 11, borderTop: "1px solid #2a1808" }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+            <Crosshair size={11} style={{ flexShrink: 0 }} />
+            <span className="uppercase tracking-widest flex-1" style={{ letterSpacing: "0.1em" }}>
+              Hot Zones {hiddenZoneCount > 0 && <span style={{ color: "#c4641e", fontSize: 10 }}>({hiddenZoneCount} hidden)</span>}
+            </span>
+            <ChevronDown size={11} style={{ transition: "transform 0.2s", transform: zonesOpen ? "rotate(180deg)" : "none" }} />
+          </button>
+          {zonesOpen && (
+            <div style={{ borderTop: "1px solid #2a1808" }}>
+              {filterRow(() => onToggleZoneKind("environmental"), AlertTriangle, "Environmental", hiddenZoneKinds.has("environmental"), "#c4641e")}
+              {filterRow(() => onToggleZoneKind("faction"), Crown, "Faction", hiddenZoneKinds.has("faction"), "#9333ea")}
+            </div>
+          )}
         </div>
       )}
     </div>
