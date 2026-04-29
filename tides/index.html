@@ -212,6 +212,7 @@ const PIN_TYPES = {
   fey:      { label: "Fey",     icon: Sparkles,  color: "#1a7a6a", glow: "#3abba0" },
   devil:    { label: "Devil",   icon: Trident,   color: "#7a1010", glow: "#d02020" },
   combat:   { label: "Combat",  icon: Swords,    color: "#5c2317", glow: "#9a3828" },
+  danger:   { label: "Danger",  icon: AlertTriangle, color: "#b82020", glow: "#e04040" },
 };
 
 const DANGER_LEVELS = {
@@ -1332,7 +1333,7 @@ function MapCanvas({ mapId, mapName }) {
                               className={`absolute group pin-marker${sel ? " pin-selected" : ""}${isMoving ? " pin-moving" : ""}`}
                               style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: pinCursor, zIndex: sel || isMoving ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
                         {/* Pulse rings — paused until hover/selected via .pin-pulse CSS */}
-                        {(p.type === "danger" || p.type === "combat") && <>
+                        {(p.pulse || p.type === "danger") && <>
                           <div className="pin-pulse" style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out infinite", pointerEvents: "none" }} />
                           <div className="pin-pulse" style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out 1s infinite", pointerEvents: "none" }} />
                         </>}
@@ -1475,7 +1476,7 @@ function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
       <div className="px-5 py-4 flex items-center justify-between border-b sticky top-0"
            style={{ borderColor: "#8b6f47", backgroundColor: "rgba(244, 232, 208, 0.98)", backdropFilter: "blur(4px)" }}>
         <h3 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 18, color: "#2a1810", letterSpacing: "0.04em" }}>
-          {kind === "pin" ? "Pin Inscription" : item.zoneKind === "faction" ? (item.type === "path" ? "Faction Route" : "Faction Territory") : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
+          {kind === "pin" ? "Pin" : item.zoneKind === "faction" ? (item.type === "path" ? "Faction Route" : "Faction Territory") : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
         </h3>
         <div className="flex items-center gap-1.5">
           {onStartMove && (
@@ -1601,6 +1602,13 @@ function PinEditor({ item, onUpdate }) {
         </div>
       )}
 
+      <div>
+        <label className="flex items-center gap-2.5 cursor-pointer select-none" style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 12, color: "#5c4030", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+          <input type="checkbox" checked={!!item.pulse} onChange={(e) => onUpdate({ pulse: e.target.checked })}
+                 style={{ width: 15, height: 15, accentColor: "#8b1a1a", cursor: "pointer" }} />
+          Pulse on hover
+        </label>
+      </div>
       <div><FieldLabel>Notes</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder="The whispers say…" /></div>
     </>
   );
