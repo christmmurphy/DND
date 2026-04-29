@@ -222,6 +222,16 @@ function getPinType(p) {
   return PIN_TYPES[p.type] || PIN_TYPES.quest;
 }
 
+const FACTION_COLORS = ["#8b1a1a","#1a3a8b","#1a6b1a","#8b6b1a","#6b1a8b","#1a6b6b","#8b3a1a","#4a4a4a"];
+
+function getZoneColors(z) {
+  if (z.zoneKind === "faction") {
+    const col = z.factionColor || "#6b1a8b";
+    return { fill: col + "2e", stroke: col };
+  }
+  return DANGER_LEVELS[z.dangerLevel] || DANGER_LEVELS.medium;
+}
+
 // ============================================================
 //  Root — manages maps list, active map, URL hash
 // ============================================================
@@ -406,6 +416,8 @@ function MapCanvas({ mapId, mapName }) {
   const [snapshots, setSnapshots]   = useState([]);
   const [snapshotStatus, setSnapshotStatus] = useState("idle");
   const [movingPin, setMovingPin] = useState(null);
+  const [zonePickerFor, setZonePickerFor] = useState(null); // "circle" | "brush"
+  const [pendingZoneKind, setPendingZoneKind] = useState("environmental");
   const [toasts, setToasts] = useState([]);
 
   const addToast = useCallback((message, type = "success") => {
@@ -696,7 +708,8 @@ function MapCanvas({ mapId, mapName }) {
         brushPointsRef.current = null;
         if (pts.length >= 3) {
           pushToHistory();
-          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), type: "path", points: pts, name: "New Coastline", dangerLevel: "medium", description: "", encounters: "" };
+          const isFaction = pendingZoneKind === "faction";
+          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), type: "path", zoneKind: pendingZoneKind, points: pts, name: isFaction ? "New Territory" : "New Coastline", dangerLevel: isFaction ? undefined : "medium", factionName: isFaction ? "" : undefined, factionColor: isFaction ? "#6b1a8b" : undefined, description: "" };
           setZones(prev => [...prev, newZone]);
           setEditingItem({ kind: "zone", id: newZone.id });
           setMode("view");
@@ -704,7 +717,8 @@ function MapCanvas({ mapId, mapName }) {
       } else {
         if (drawing.radius >= 0.015) {
           pushToHistory();
-          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x: drawing.x, y: drawing.y, radius: drawing.radius, name: "New Hot Zone", dangerLevel: "medium", description: "", encounters: "" };
+          const isFaction = pendingZoneKind === "faction";
+          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), zoneKind: pendingZoneKind, x: drawing.x, y: drawing.y, radius: drawing.radius, name: isFaction ? "New Territory" : "New Hot Zone", dangerLevel: isFaction ? undefined : "medium", factionName: isFaction ? "" : undefined, factionColor: isFaction ? "#6b1a8b" : undefined, description: "" };
           setZones(prev => [...prev, newZone]);
           setEditingItem({ kind: "zone", id: newZone.id });
           setMode("view");
@@ -782,19 +796,24 @@ function MapCanvas({ mapId, mapName }) {
                   {zones.length > 0 && (
                     <div className="mb-3">
                       <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Hot Zones · {zones.length}</h3>
-                      {zones.map(z => (
+                      {zones.map(z => {
+                        const D = getZoneColors(z);
+                        const isFaction = z.zoneKind === "faction";
+                        const kindLabel = isFaction ? (z.factionName || "Faction") : (DANGER_LEVELS[z.dangerLevel]?.label || "");
+                        return (
                         <button key={z.id} onClick={() => { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); const c = z.type === "path" ? z.points[Math.floor(z.points.length / 2)] : { x: z.x, y: z.y }; focusOnItem(c.x, c.y); }}
                                 className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5"
-                                style={{ border: `1.5px solid ${DANGER_LEVELS[z.dangerLevel].stroke}`, backgroundColor: DANGER_LEVELS[z.dangerLevel].fill }}>
+                                style={{ border: `1.5px solid ${D.stroke}`, backgroundColor: D.fill }}>
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              {z.type === "path" ? <Brush size={11} style={{ color: DANGER_LEVELS[z.dangerLevel].stroke, flexShrink: 0 }} /> : <Crosshair size={11} style={{ color: DANGER_LEVELS[z.dangerLevel].stroke, flexShrink: 0 }} />}
+                              {z.type === "path" ? (isFaction ? <Crown size={11} style={{ color: D.stroke, flexShrink: 0 }} /> : <Brush size={11} style={{ color: D.stroke, flexShrink: 0 }} />) : (isFaction ? <Crown size={11} style={{ color: D.stroke, flexShrink: 0 }} /> : <Crosshair size={11} style={{ color: D.stroke, flexShrink: 0 }} />)}
                               <span className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{z.name}</span>
                             </div>
-                            <span className="text-xs uppercase tracking-wider whitespace-nowrap" style={{ color: DANGER_LEVELS[z.dangerLevel].stroke, fontWeight: 600 }}>{DANGER_LEVELS[z.dangerLevel].label}</span>
+                            <span className="text-xs uppercase tracking-wider whitespace-nowrap" style={{ color: D.stroke, fontWeight: 600 }}>{kindLabel}</span>
                           </div>
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                   {pins.length > 0 && (
@@ -890,8 +909,8 @@ function MapCanvas({ mapId, mapName }) {
               <Sep />
               <ToolbarBtn active={mode === "pin"}     onClick={() => setMode("pin")}     icon={MapPin}    label="Pin" />
               <ToolbarBtn active={mode === "movepin"} onClick={() => setMode("movepin")} icon={GrabHand} label="Drag" />
-              <ToolbarBtn active={mode === "zone"}   onClick={() => setMode("zone")}   icon={Crosshair} label="Circle" />
-              <ToolbarBtn active={mode === "brush"}  onClick={() => setMode("brush")}  icon={Brush}     label="Brush" />
+              <ToolbarBtn active={mode === "zone"}   onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
+              <ToolbarBtn active={mode === "brush"}  onClick={() => { setZonePickerFor("brush"); }}  icon={Brush}     label="Brush" />
               <Sep />
               <ToolbarBtn disabled={undoStack.length === 0} onClick={undo} icon={Undo2} label="Undo" title={`Undo (${undoStack.length})`} />
               <ToolbarBtn disabled={redoStack.length === 0} onClick={redo} icon={Redo2} label="Redo" />
@@ -901,14 +920,21 @@ function MapCanvas({ mapId, mapName }) {
               <button onClick={resetView} className="px-2.5 py-1.5 text-xs uppercase tracking-wider rounded" style={{ color: "#f4e8d0" }}>Reset</button>
             </div>
 
+            {/* Zone kind picker */}
+            {zonePickerFor && (
+              <ZoneKindPicker shape={zonePickerFor}
+                onPick={(kind) => { setPendingZoneKind(kind); setMode(zonePickerFor === "circle" ? "zone" : "brush"); setZonePickerFor(null); }}
+                onDismiss={() => setZonePickerFor(null)} />
+            )}
+
             {/* Mode hint */}
-            {mode !== "view" && (
+            {mode !== "view" && !zonePickerFor && (
               <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded text-sm"
                    style={{ backgroundColor: "rgba(244, 232, 208, 0.95)", border: "1px dashed #5c4030", fontFamily: "'IM Fell English', serif", fontStyle: "italic" }}>
                 {mode === "pin"     && "Click anywhere on the chart to place a pin."}
                 {mode === "movepin" && "Click and drag any pin to reposition it."}
-                {mode === "zone"   && "Click and drag to inscribe a circular hot zone."}
-                {mode === "brush"  && "Click and drag to paint a coastline or route."}
+                {mode === "zone"   && `Click and drag to draw a ${pendingZoneKind} zone.`}
+                {mode === "brush"  && `Click and drag to paint a ${pendingZoneKind} stroke.`}
                 {mode === "pan"    && "Drag to reposition. Pinch or scroll to zoom."}
               </div>
             )}
@@ -945,10 +971,18 @@ function MapCanvas({ mapId, mapName }) {
                        }} />
 
                   {/* SVG overlay: zones */}
+                  {(() => {
+                    const envCircles   = zones.filter(z => (!z.type || z.type === "circle") && (!z.zoneKind || z.zoneKind === "environmental"));
+                    const factionCircles = zones.filter(z => (!z.type || z.type === "circle") && z.zoneKind === "faction");
+                    const crossovers = [];
+                    for (const e of envCircles) for (const f of factionCircles)
+                      if (Math.hypot(e.x - f.x, e.y - f.y) < e.radius + f.radius)
+                        crossovers.push({ e, f, id: e.id + "_" + f.id });
+                    return (
                   <svg className="absolute inset-0 pointer-events-none" style={{ width: "100%", height: "100%" }} viewBox="0 0 1 1" preserveAspectRatio="none">
                     <defs>
                       {zones.map(z => {
-                        const D = DANGER_LEVELS[z.dangerLevel];
+                        const D = getZoneColors(z);
                         return (
                           <filter key={"glow-" + z.id} id={"glow-" + z.id} x="-50%" y="-50%" width="200%" height="200%">
                             <feGaussianBlur stdDeviation="0.006" result="blur"/>
@@ -958,21 +992,20 @@ function MapCanvas({ mapId, mapName }) {
                           </filter>
                         );
                       })}
+                      {crossovers.map(c => (
+                        <clipPath key={"cp-" + c.id} id={"cp-" + c.id} clipPathUnits="userSpaceOnUse">
+                          <circle cx={c.e.x} cy={c.e.y} r={c.e.radius} />
+                        </clipPath>
+                      ))}
                     </defs>
 
                     {/* Circle zones */}
                     {zones.filter(z => !z.type || z.type === "circle").map(z => {
-                      const D = DANGER_LEVELS[z.dangerLevel];
+                      const D = getZoneColors(z);
                       const sel = selectedId === z.id;
-                      const hov = selectedId !== z.id;
                       return (
                         <g key={z.id} className="zone-circle pointer-events-auto" style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
-                          {/* Hover glow layer */}
-                          <circle cx={z.x} cy={z.y} r={z.radius} fill="none" stroke={D.stroke}
-                                  strokeWidth="0.006" strokeOpacity="0" vectorEffect="non-scaling-stroke"
-                                  style={{ transition: "stroke-opacity 0.3s" }}
-                                  className="zone-hover-glow" />
                           <circle cx={z.x} cy={z.y} r={z.radius} fill={D.fill} stroke={D.stroke}
                                   strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke"
                                   filter={sel ? `url(#glow-${z.id})` : undefined}>
@@ -984,21 +1017,18 @@ function MapCanvas({ mapId, mapName }) {
 
                     {/* Path (brush) zones */}
                     {zones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
-                      const D = DANGER_LEVELS[z.dangerLevel];
+                      const D = getZoneColors(z);
                       const sel = selectedId === z.id;
                       const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
                       return (
                         <g key={z.id} className="zone-path pointer-events-auto" style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
-                          {/* Wide invisible hit area */}
                           <polyline points={pts} fill="none" stroke="transparent" strokeWidth="0.04" strokeLinecap="round" />
-                          {/* Highlighter body */}
                           <polyline points={pts} fill="none" stroke={D.stroke}
                                     strokeOpacity={sel ? 0.65 : 0.35} strokeWidth="0.022"
                                     strokeLinecap="round" strokeLinejoin="round"
                                     filter={sel ? `url(#glow-${z.id})` : undefined}
                                     style={{ transition: "stroke-opacity 0.3s" }} />
-                          {/* Crisp outline */}
                           <polyline points={pts} fill="none" stroke={D.stroke}
                                     strokeWidth={sel ? 0.004 : 0.0025} strokeLinecap="round" strokeLinejoin="round"
                                     strokeDasharray={sel ? "0.012 0.008" : undefined} vectorEffect="non-scaling-stroke">
@@ -1007,6 +1037,25 @@ function MapCanvas({ mapId, mapName }) {
                         </g>
                       );
                     })}
+
+                    {/* Crossover regions — stylish purple where faction meets environmental */}
+                    {crossovers.map(c => (
+                      <g key={"crossover-" + c.id} className="pointer-events-none">
+                        <circle cx={c.f.x} cy={c.f.y} r={c.f.radius}
+                                fill="rgba(147,51,234,0.32)" stroke="#9333ea"
+                                strokeWidth="0.003" vectorEffect="non-scaling-stroke"
+                                clipPath={`url(#cp-${c.id})`}>
+                          <animate attributeName="fill-opacity" values="0.22;0.42;0.22" dur="3s" repeatCount="indefinite" />
+                        </circle>
+                        <circle cx={c.f.x} cy={c.f.y} r={c.f.radius}
+                                fill="none" stroke="rgba(196,130,255,0.6)"
+                                strokeWidth="0.002" vectorEffect="non-scaling-stroke"
+                                clipPath={`url(#cp-${c.id})`}
+                                strokeDasharray="0.015 0.01">
+                          <animate attributeName="stroke-dashoffset" values="0;-0.05" dur="4s" repeatCount="indefinite" />
+                        </circle>
+                      </g>
+                    ))}
 
                     {/* In-progress circle */}
                     {drawing && !drawing.type && (
@@ -1021,19 +1070,21 @@ function MapCanvas({ mapId, mapName }) {
                                 strokeLinecap="round" strokeLinejoin="round" />
                     )}
                   </svg>
+                    );
+                  })()}
 
                   {/* Circle zone labels */}
                   {zones.filter(z => !z.type || z.type === "circle").map(z => {
-                    const D = DANGER_LEVELS[z.dangerLevel];
+                    const D = getZoneColors(z);
                     return (
                       <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
                            style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, transform: "translate(-50%, -50%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: Math.max(9, Math.min(14, z.radius * 130)) / zoom + "px", letterSpacing: "0.05em", fontWeight: 700, maxWidth: `${z.radius * 180}%`, lineHeight: 1.1, backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2 }}>{z.name}</div>
                     );
                   })}
 
-                  {/* Path zone labels — positioned at the midpoint of the stroke */}
+                  {/* Path zone labels */}
                   {zones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
-                    const D = DANGER_LEVELS[z.dangerLevel];
+                    const D = getZoneColors(z);
                     const mid = z.points[Math.floor(z.points.length / 2)];
                     return (
                       <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
@@ -1207,7 +1258,7 @@ function EditPanel({ item, kind, onClose, onSave, onDelete }) {
       <div className="px-5 py-4 flex items-center justify-between border-b sticky top-0"
            style={{ borderColor: "#8b6f47", backgroundColor: "rgba(244, 232, 208, 0.98)", backdropFilter: "blur(4px)" }}>
         <h3 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 18, color: "#2a1810", letterSpacing: "0.04em" }}>
-          {kind === "pin" ? "Pin Inscription" : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
+          {kind === "pin" ? "Pin Inscription" : item.zoneKind === "faction" ? (item.type === "path" ? "Faction Route" : "Faction Territory") : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
         </h3>
         <div className="flex items-center gap-1.5">
           <button onClick={() => onSave(draft)}
@@ -1246,6 +1297,7 @@ const inputStyle = () => ({
 });
 
 function PinEditor({ item, onUpdate }) {
+  const [customExpanded, setCustomExpanded] = useState(!item.customLabel);
   const customColor = item.customColor || "#7a5c3a";
   const customIconKey = item.customIconKey || "star";
   return (
@@ -1275,7 +1327,14 @@ function PinEditor({ item, onUpdate }) {
 
       {/* Custom pin definition fields */}
       {item.type === "custom" && (
-        <div className="space-y-3 p-3 rounded" style={{ backgroundColor: "rgba(255,250,235,0.5)", border: "1px solid #8b6f47" }}>
+        <div className="rounded" style={{ border: "1px solid #8b6f47" }}>
+          <button onClick={() => setCustomExpanded(e => !e)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-xs"
+                  style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030", backgroundColor: "rgba(255,250,235,0.5)", borderRadius: customExpanded ? "2px 2px 0 0" : 2 }}>
+            <span>Custom Style{item.customLabel ? ` · ${item.customLabel}` : ""}</span>
+            <ChevronDown size={12} style={{ transform: customExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+          </button>
+        {customExpanded && <div className="space-y-3 p-3" style={{ backgroundColor: "rgba(255,250,235,0.5)", borderTop: "1px solid #8b6f4755" }}>
           <div>
             <FieldLabel>Custom Label</FieldLabel>
             <input value={item.customLabel || ""} onChange={(e) => onUpdate({ customLabel: e.target.value })} style={inputStyle()} placeholder="e.g. Volcano, Temple, Ruin…" />
@@ -1309,6 +1368,7 @@ function PinEditor({ item, onUpdate }) {
               })}
             </div>
           </div>
+        </div>}
         </div>
       )}
 
@@ -1318,27 +1378,103 @@ function PinEditor({ item, onUpdate }) {
 }
 
 function ZoneEditor({ item, onUpdate }) {
+  const isFaction = item.zoneKind === "faction";
+  const factionColor = item.factionColor || "#6b1a8b";
   return (
     <>
-      <div><FieldLabel>{item.type === "path" ? "Coastline Name" : "Zone Name"}</FieldLabel><input value={item.name} onChange={(e) => onUpdate({ name: e.target.value })} style={inputStyle()} placeholder="What is this region called?" /></div>
       <div>
-        <FieldLabel>Danger Level</FieldLabel>
-        <div className="grid grid-cols-5 gap-1">
-          {Object.entries(DANGER_LEVELS).map(([key, d]) => {
-            const active = item.dangerLevel === key;
-            return (
-              <button key={key} onClick={() => onUpdate({ dangerLevel: key })}
-                      className="py-1.5 rounded text-xs uppercase tracking-wider"
-                      style={{ backgroundColor: active ? d.stroke : "transparent", color: active ? "#f4e8d0" : d.stroke, border: `1px solid ${d.stroke}`, fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em" }}>
-                {d.label}
-              </button>
-            );
-          })}
-        </div>
-        <p className="mt-2 text-xs italic" style={{ color: "#5c4030" }}>{DANGER_LEVELS[item.dangerLevel].desc}</p>
+        <FieldLabel>{item.type === "path" ? (isFaction ? "Territory Route" : "Coastline Name") : (isFaction ? "Territory Name" : "Zone Name")}</FieldLabel>
+        <input value={item.name} onChange={(e) => onUpdate({ name: e.target.value })} style={inputStyle()} placeholder="What is this region called?" />
       </div>
-      <div><FieldLabel>Description</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder="What characterizes this region?" /></div>
+
+      {isFaction ? (
+        <>
+          <div>
+            <FieldLabel>Faction / Group</FieldLabel>
+            <div className="flex items-start gap-1.5 mb-1" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>
+              <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+              Which group holds dominion here?
+            </div>
+            <input value={item.factionName || ""} onChange={(e) => onUpdate({ factionName: e.target.value })} style={inputStyle()} placeholder="e.g. The Iron Circle, Sea Princes…" />
+          </div>
+          <div>
+            <FieldLabel>Faction Colour</FieldLabel>
+            <div className="flex items-center gap-3">
+              <input type="color" value={factionColor} onChange={(e) => onUpdate({ factionColor: e.target.value })}
+                     style={{ width: 36, height: 30, border: "1px solid #8b6f47", borderRadius: 2, cursor: "pointer", padding: 1, backgroundColor: "transparent" }} />
+              <div className="flex gap-1.5 flex-wrap">
+                {FACTION_COLORS.map(c => (
+                  <button key={c} onClick={() => onUpdate({ factionColor: c })}
+                          style={{ width: 20, height: 20, backgroundColor: c, borderRadius: "50%", border: factionColor === c ? "2px solid #2a1810" : "2px solid transparent", outline: factionColor === c ? "2px solid " + c : "none" }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div>
+          <FieldLabel>Danger Level</FieldLabel>
+          <div className="flex items-start gap-1.5 mb-2" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>
+            <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+            How perilous are conditions in this area?
+          </div>
+          <div className="grid grid-cols-5 gap-1">
+            {Object.entries(DANGER_LEVELS).map(([key, d]) => {
+              const active = item.dangerLevel === key;
+              return (
+                <button key={key} onClick={() => onUpdate({ dangerLevel: key })}
+                        className="py-1.5 rounded text-xs uppercase tracking-wider"
+                        style={{ backgroundColor: active ? d.stroke : "transparent", color: active ? "#f4e8d0" : d.stroke, border: `1px solid ${d.stroke}`, fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em" }}>
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+          {item.dangerLevel && <p className="mt-2 text-xs italic" style={{ color: "#5c4030" }}>{DANGER_LEVELS[item.dangerLevel]?.desc}</p>}
+        </div>
+      )}
+
+      <div><FieldLabel>Description</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder={isFaction ? "Notes on this faction's presence…" : "What characterizes this region?"} /></div>
     </>
+  );
+}
+
+function ZoneKindPicker({ shape, onPick, onDismiss }) {
+  useEffect(() => {
+    const handler = (e) => { onDismiss(); };
+    const t = setTimeout(() => window.addEventListener("pointerdown", handler), 0);
+    return () => { clearTimeout(t); window.removeEventListener("pointerdown", handler); };
+  }, [onDismiss]);
+  return (
+    <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 rounded-sm shadow-2xl overflow-hidden"
+         style={{ backgroundColor: "rgba(22,12,6,0.98)", border: "1px solid #8b6f47", minWidth: 260, animation: "toastPop 0.2s ease-out" }}
+         onPointerDown={(e) => e.stopPropagation()}>
+      <div className="px-4 py-2 border-b text-xs uppercase tracking-widest"
+           style={{ color: "#a89070", borderColor: "#3a2010", fontFamily: "'IM Fell English SC', serif" }}>
+        What kind of {shape === "circle" ? "zone" : "brush stroke"} are you drawing?
+      </div>
+      <button onClick={() => onPick("environmental")}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 text-left transition-colors">
+        <div className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "rgba(139,26,26,0.25)", border: "1px solid #8b1a1a" }}>
+          <AlertTriangle size={18} style={{ color: "#c93838" }} />
+        </div>
+        <div>
+          <div style={{ fontFamily: "'IM Fell English SC', serif", color: "#f4e8d0", fontSize: 15 }}>Environmental</div>
+          <div style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#7a6050" }}>How dangerous is this terrain?</div>
+        </div>
+      </button>
+      <button onClick={() => onPick("faction")}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 text-left transition-colors border-t"
+              style={{ borderColor: "#3a2010" }}>
+        <div className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "rgba(147,51,234,0.2)", border: "1px solid #9333ea" }}>
+          <Crown size={18} style={{ color: "#c084fc" }} />
+        </div>
+        <div>
+          <div style={{ fontFamily: "'IM Fell English SC', serif", color: "#f4e8d0", fontSize: 15 }}>Faction</div>
+          <div style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#7a6050" }}>Which group holds dominion here?</div>
+        </div>
+      </button>
+    </div>
   );
 }
 
