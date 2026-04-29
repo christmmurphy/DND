@@ -44,8 +44,14 @@
       0%   { stroke-dashoffset: 0; }
       100% { stroke-dashoffset: -0.2; }
     }
-    .zone-circle:hover circle { stroke-opacity: 0.9 !important; filter: drop-shadow(0 0 4px currentColor); }
-    .zone-path:hover polyline  { stroke-opacity: 0.7 !important; }
+    .zone-circle { opacity: 0.52; transition: opacity 0.3s ease; }
+    .zone-circle:hover, .zone-circle.zone-selected { opacity: 1; }
+    .zone-circle:hover circle { stroke-opacity: 0.95 !important; filter: drop-shadow(0 0 6px currentColor); }
+    .zone-path { opacity: 0.52; transition: opacity 0.3s ease; }
+    .zone-path:hover, .zone-path.zone-selected { opacity: 1; }
+    .zone-path:hover polyline  { stroke-opacity: 0.75 !important; }
+    .pin-marker { opacity: 0.62; transition: opacity 0.25s ease; }
+    .pin-marker:hover, .pin-marker.pin-selected, .pin-marker.pin-moving { opacity: 1; }
     .pin-tooltip-enter { opacity: 0; transform: translateY(6px); }
     .pin-tooltip-enter-active { opacity: 1; transform: translateY(0); transition: opacity 0.2s, transform 0.2s; }
     .splash {
@@ -197,11 +203,11 @@ const PIN_TYPES = {
 };
 
 const DANGER_LEVELS = {
-  safe:   { label: "Safe",   fill: "rgba(74, 103, 65, 0.18)",  stroke: "#4a6741", desc: "Common encounters: travelers, merchants, minor wildlife." },
-  low:    { label: "Low",    fill: "rgba(184, 134, 11, 0.22)", stroke: "#b8860b", desc: "Wandering bandits, weak beasts, navigational hazards." },
-  medium: { label: "Medium", fill: "rgba(196, 100, 30, 0.28)", stroke: "#c4641e", desc: "Organized threats, dangerous fauna, magical disturbances." },
-  high:   { label: "High",   fill: "rgba(139, 26, 26, 0.32)",  stroke: "#8b1a1a", desc: "Apex predators, raiding parties, elite cultists." },
-  lethal: { label: "Lethal", fill: "rgba(60, 8, 8, 0.45)",     stroke: "#3c0808", desc: "Legendary creatures, planar incursions, certain death." },
+  safe:   { label: "Safe",   fill: "rgba(74, 103, 65, 0.38)",  stroke: "#4a6741", desc: "Common encounters: travelers, merchants, minor wildlife." },
+  low:    { label: "Low",    fill: "rgba(184, 134, 11, 0.46)", stroke: "#b8860b", desc: "Wandering bandits, weak beasts, navigational hazards." },
+  medium: { label: "Medium", fill: "rgba(196, 100, 30, 0.52)", stroke: "#c4641e", desc: "Organized threats, dangerous fauna, magical disturbances." },
+  high:   { label: "High",   fill: "rgba(139, 26, 26, 0.58)",  stroke: "#8b1a1a", desc: "Apex predators, raiding parties, elite cultists." },
+  lethal: { label: "Lethal", fill: "rgba(60, 8, 8, 0.72)",     stroke: "#3c0808", desc: "Legendary creatures, planar incursions, certain death." },
 };
 
 const MAX_HISTORY = 4;
@@ -227,7 +233,7 @@ const FACTION_COLORS = ["#8b1a1a","#1a3a8b","#1a6b1a","#8b6b1a","#6b1a8b","#1a6b
 function getZoneColors(z) {
   if (z.zoneKind === "faction") {
     const col = z.factionColor || "#6b1a8b";
-    return { fill: col + "2e", stroke: col };
+    return { fill: col + "60", stroke: col };
   }
   return DANGER_LEVELS[z.dangerLevel] || DANGER_LEVELS.medium;
 }
@@ -419,6 +425,8 @@ function MapCanvas({ mapId, mapName }) {
   const [zonePickerFor, setZonePickerFor] = useState(null); // "circle" | "brush"
   const [pendingZoneKind, setPendingZoneKind] = useState("environmental");
   const [toasts, setToasts] = useState([]);
+  const [hiddenTypes, setHiddenTypes] = useState(new Set());
+  const [hiddenZoneKinds, setHiddenZoneKinds] = useState(new Set());
 
   const addToast = useCallback((message, type = "success") => {
     const id = Date.now() + Math.random();
@@ -755,7 +763,47 @@ function MapCanvas({ mapId, mapName }) {
     setZoom(targetZoom);
   }, [zoom]);
 
+  const handleZoomToCluster = useCallback((group) => {
+    if (!imgContainerRef.current) return;
+    const xs = group.map(p => p.x), ys = group.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const spanX = Math.max(0.05, maxX - minX);
+    const spanY = Math.max(0.05, maxY - minY);
+    const newZoom = Math.min(5, Math.min(0.65 / spanX, 0.65 / spanY));
+    const cX = (minX + maxX) / 2, cY = (minY + maxY) / 2;
+    const imgW = imgContainerRef.current.clientWidth;
+    const imgH = imgContainerRef.current.clientHeight;
+    setPan({ x: -newZoom * (cX * imgW - imgW / 2), y: -newZoom * (cY * imgH - imgH / 2) });
+    setZoom(newZoom);
+  }, []);
+
+  const togglePinType = useCallback((type) => {
+    setHiddenTypes(prev => { const s = new Set(prev); if (s.has(type)) s.delete(type); else s.add(type); return s; });
+  }, []);
+
+  const toggleZoneKind = useCallback((kind) => {
+    setHiddenZoneKinds(prev => { const s = new Set(prev); if (s.has(kind)) s.delete(kind); else s.add(kind); return s; });
+  }, []);
+
   const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
+
+  const visiblePins = pins.filter(p => !hiddenTypes.has(p.type === "custom" ? "custom" : p.type));
+  const visibleZones = zones.filter(z => !hiddenZoneKinds.has(z.zoneKind || "environmental"));
+  const CLUSTER_THRESHOLD = mode === "view" ? 0.08 / Math.max(1, zoom) : 0;
+  const clusterAssigned = new Set();
+  const pinClusters = [];
+  for (const p of visiblePins) {
+    if (clusterAssigned.has(p.id)) continue;
+    const group = [p];
+    clusterAssigned.add(p.id);
+    for (const q of visiblePins) {
+      if (clusterAssigned.has(q.id)) continue;
+      if (Math.hypot(p.x - q.x, p.y - q.y) < CLUSTER_THRESHOLD) { group.push(q); clusterAssigned.add(q.id); }
+    }
+    if (group.length > 1) pinClusters.push(group);
+  }
+  const clusteredPinIds = new Set(pinClusters.flatMap(g => g.map(p => p.id)));
 
   const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", brush: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab", movepin: movingPin ? "cursor-grabbing" : "cursor-default" }[mode] || "cursor-default";
 
@@ -907,9 +955,8 @@ function MapCanvas({ mapId, mapName }) {
               <ToolbarBtn active={mode === "view"}  onClick={() => setMode("view")}  icon={Eye}        label="Read" />
               <ToolbarBtn active={mode === "pan"}   onClick={() => setMode("pan")}   icon={Move}       label="Pan" />
               <Sep />
-              <ToolbarBtn active={mode === "pin"}     onClick={() => setMode("pin")}     icon={MapPin}    label="Pin" />
-              <ToolbarBtn active={mode === "movepin"} onClick={() => setMode("movepin")} icon={GrabHand} label="Drag" />
-              <ToolbarBtn active={mode === "zone"}   onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
+              <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}    label="Pin" />
+              <ToolbarBtn active={mode === "zone"} onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
               <ToolbarBtn active={mode === "brush"}  onClick={() => { setZonePickerFor("brush"); }}  icon={Brush}     label="Brush" />
               <Sep />
               <ToolbarBtn disabled={undoStack.length === 0} onClick={undo} icon={Undo2} label="Undo" title={`Undo (${undoStack.length})`} />
@@ -932,7 +979,7 @@ function MapCanvas({ mapId, mapName }) {
               <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded text-sm"
                    style={{ backgroundColor: "rgba(244, 232, 208, 0.95)", border: "1px dashed #5c4030", fontFamily: "'IM Fell English', serif", fontStyle: "italic" }}>
                 {mode === "pin"     && "Click anywhere on the chart to place a pin."}
-                {mode === "movepin" && "Click and drag any pin to reposition it."}
+                {mode === "movepin" && "Drag the pin to reposition it. Click Read when done."}
                 {mode === "zone"   && `Click and drag to draw a ${pendingZoneKind} zone.`}
                 {mode === "brush"  && `Click and drag to paint a ${pendingZoneKind} stroke.`}
                 {mode === "pan"    && "Drag to reposition. Pinch or scroll to zoom."}
@@ -972,8 +1019,8 @@ function MapCanvas({ mapId, mapName }) {
 
                   {/* SVG overlay: zones */}
                   {(() => {
-                    const envCircles   = zones.filter(z => (!z.type || z.type === "circle") && (!z.zoneKind || z.zoneKind === "environmental"));
-                    const factionCircles = zones.filter(z => (!z.type || z.type === "circle") && z.zoneKind === "faction");
+                    const envCircles   = visibleZones.filter(z => (!z.type || z.type === "circle") && (!z.zoneKind || z.zoneKind === "environmental"));
+                    const factionCircles = visibleZones.filter(z => (!z.type || z.type === "circle") && z.zoneKind === "faction");
                     const crossovers = [];
                     for (const e of envCircles) for (const f of factionCircles)
                       if (Math.hypot(e.x - f.x, e.y - f.y) < e.radius + f.radius)
@@ -1000,11 +1047,11 @@ function MapCanvas({ mapId, mapName }) {
                     </defs>
 
                     {/* Circle zones */}
-                    {zones.filter(z => !z.type || z.type === "circle").map(z => {
+                    {visibleZones.filter(z => !z.type || z.type === "circle").map(z => {
                       const D = getZoneColors(z);
                       const sel = selectedId === z.id;
                       return (
-                        <g key={z.id} className="zone-circle pointer-events-auto" style={{ cursor: "pointer" }}
+                        <g key={z.id} className={`zone-circle pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
                           <circle cx={z.x} cy={z.y} r={z.radius} fill={D.fill} stroke={D.stroke}
                                   strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke"
@@ -1016,12 +1063,12 @@ function MapCanvas({ mapId, mapName }) {
                     })}
 
                     {/* Path (brush) zones */}
-                    {zones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
+                    {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
                       const D = getZoneColors(z);
                       const sel = selectedId === z.id;
                       const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
                       return (
-                        <g key={z.id} className="zone-path pointer-events-auto" style={{ cursor: "pointer" }}
+                        <g key={z.id} className={`zone-path pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
                           <polyline points={pts} fill="none" stroke="transparent" strokeWidth="0.04" strokeLinecap="round" />
                           <polyline points={pts} fill="none" stroke={D.stroke}
@@ -1074,7 +1121,7 @@ function MapCanvas({ mapId, mapName }) {
                   })()}
 
                   {/* Circle zone labels */}
-                  {zones.filter(z => !z.type || z.type === "circle").map(z => {
+                  {visibleZones.filter(z => !z.type || z.type === "circle").map(z => {
                     const D = getZoneColors(z);
                     return (
                       <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
@@ -1083,7 +1130,7 @@ function MapCanvas({ mapId, mapName }) {
                   })}
 
                   {/* Path zone labels */}
-                  {zones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
+                  {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
                     const D = getZoneColors(z);
                     const mid = z.points[Math.floor(z.points.length / 2)];
                     return (
@@ -1093,7 +1140,7 @@ function MapCanvas({ mapId, mapName }) {
                   })}
 
                   {/* Danger / combat pulse rings (behind pins) */}
-                  {pins.filter(p => p.type === "danger" || p.type === "combat").map(p => {
+                  {visiblePins.filter(p => (p.type === "danger" || p.type === "combat") && !clusteredPinIds.has(p.id)).map(p => {
                     const T = getPinType(p);
                     const scale = 1 / Math.max(0.5, zoom * 0.7);
                     return (
@@ -1105,8 +1152,27 @@ function MapCanvas({ mapId, mapName }) {
                     );
                   })}
 
+                  {/* Cluster markers */}
+                  {pinClusters.map(group => {
+                    const cx = group.reduce((s, p) => s + p.x, 0) / group.length;
+                    const cy = group.reduce((s, p) => s + p.y, 0) / group.length;
+                    const pinScale = 1 / Math.max(0.5, zoom * 0.7);
+                    const firstT = getPinType(group[0]);
+                    return (
+                      <button key={"cluster-" + group[0].id}
+                              onClick={(e) => { e.stopPropagation(); handleZoomToCluster(group); }}
+                              className="absolute pin-marker"
+                              style={{ left: `${cx * 100}%`, top: `${cy * 100}%`, transform: `translate(-50%, -50%) scale(${pinScale})`, transformOrigin: "center", zIndex: 11, cursor: "pointer", background: "none", border: "none", padding: 0 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: "50%", backgroundColor: "rgba(22,12,6,0.93)", border: `2px solid ${firstT.color}`, color: "#f4e8d0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontFamily: "'IM Fell English SC', serif", boxShadow: `0 3px 12px rgba(0,0,0,0.65), 0 0 18px ${firstT.glow}44`, position: "relative" }}>
+                          <div style={{ position: "absolute", inset: 3, borderRadius: "50%", border: `1px solid ${firstT.color}55` }} />
+                          {group.length}
+                        </div>
+                      </button>
+                    );
+                  })}
+
                   {/* Pins */}
-                  {pins.map(p => {
+                  {visiblePins.filter(p => !clusteredPinIds.has(p.id)).map(p => {
                     const T = getPinType(p);
                     const Ico = T.icon;
                     const sel = selectedId === p.id;
@@ -1132,7 +1198,7 @@ function MapCanvas({ mapId, mapName }) {
                               }}
                               onPointerUp={(e) => { if (movingPin === p.id) setMovingPin(null); }}
                               onPointerCancel={(e) => { if (movingPin === p.id) setMovingPin(null); }}
-                              className="absolute group"
+                              className={`absolute group pin-marker${sel ? " pin-selected" : ""}${isMoving ? " pin-moving" : ""}`}
                               style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: pinCursor, zIndex: sel || isMoving ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
                         <div className="absolute" style={{ bottom: -3, left: "50%", transform: "translateX(-50%)", width: 22, height: 6, background: "radial-gradient(ellipse, rgba(42,24,16,0.6) 0%, transparent 70%)" }} />
                         <div className="relative flex items-center justify-center"
@@ -1170,7 +1236,10 @@ function MapCanvas({ mapId, mapName }) {
               </div>
             </div>
 
-            <div className="absolute bottom-4 right-4 z-10 pointer-events-none opacity-50"><CompassRose size={70} /></div>
+            <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-3">
+              <FilterPanel hiddenTypes={hiddenTypes} hiddenZoneKinds={hiddenZoneKinds} onToggleType={togglePinType} onToggleZoneKind={toggleZoneKind} />
+              <div className="pointer-events-none opacity-50"><CompassRose size={70} /></div>
+            </div>
           </>
         )}
       </main>
@@ -1184,7 +1253,13 @@ function MapCanvas({ mapId, mapName }) {
                      setEditingItem(null); setSelectedId(null);
                      addToast("Changes saved.");
                    }}
-                   onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)} />
+                   onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)}
+                   onStartMove={editingItem.kind === "pin" ? () => {
+                     const pinId = editingObj.id;
+                     setEditingItem(null); setSelectedId(null);
+                     setMode("movepin");
+                     addToast("Drag the pin to reposition it.");
+                   } : null} />
       )}
 
       <ToastContainer toasts={toasts} />
@@ -1249,7 +1324,7 @@ function UploadGate({ onPickFile, onDropFile, error }) {
   );
 }
 
-function EditPanel({ item, kind, onClose, onSave, onDelete }) {
+function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
   const [draft, setDraft] = useState({ ...item });
   const updateDraft = (patch) => setDraft(d => ({ ...d, ...patch }));
   return (
@@ -1261,6 +1336,14 @@ function EditPanel({ item, kind, onClose, onSave, onDelete }) {
           {kind === "pin" ? "Pin Inscription" : item.zoneKind === "faction" ? (item.type === "path" ? "Faction Route" : "Faction Territory") : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
         </h3>
         <div className="flex items-center gap-1.5">
+          {onStartMove && (
+            <button onClick={onStartMove}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs"
+                    style={{ backgroundColor: "rgba(42,24,16,0.12)", color: "#5c4030", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.05em" }}
+                    title="Drag pin to new location">
+              <GrabHand size={14} /> Move
+            </button>
+          )}
           <button onClick={() => onSave(draft)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs"
                   style={{ backgroundColor: "#2a4a1a", color: "#c8f0a8", border: "1px solid #4a6741", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.05em" }}
@@ -1489,6 +1572,82 @@ function ToastContainer({ toasts }) {
           {t.message}
         </div>
       ))}
+    </div>
+  );
+}
+
+function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneKind }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const t = setTimeout(() => document.addEventListener("mousedown", close), 0);
+    return () => { clearTimeout(t); document.removeEventListener("mousedown", close); };
+  }, [open]);
+  const activeCount = hiddenTypes.size + hiddenZoneKinds.size;
+  return (
+    <div ref={ref} className="relative" style={{ pointerEvents: "auto" }}>
+      <button onClick={() => setOpen(o => !o)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
+              style={{ backgroundColor: "rgba(42,24,16,0.93)", color: "#f4e8d0", border: `1px solid ${activeCount > 0 ? "#c4641e" : "#8b6f47"}`, fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em" }}>
+        <Eye size={13} />
+        <span>Filters</span>
+        {activeCount > 0 && (
+          <span style={{ backgroundColor: "#c4641e", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontFamily: "sans-serif", flexShrink: 0 }}>{activeCount}</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 mb-2 rounded-sm shadow-2xl overflow-hidden"
+             style={{ backgroundColor: "rgba(22,12,6,0.97)", border: "1px solid #8b6f47", minWidth: 190, animation: "toastPop 0.2s ease-out" }}>
+          <div className="px-3 py-1.5 border-b text-xs uppercase tracking-widest"
+               style={{ borderColor: "#3a2010", color: "#a89070", fontFamily: "'IM Fell English SC', serif" }}>Pins</div>
+          {Object.entries(PIN_TYPES).map(([key, t]) => {
+            const Icon = t.icon; const hidden = hiddenTypes.has(key);
+            return (
+              <button key={key} onClick={() => onToggleType(key)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
+                      style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                <Icon size={11} style={{ color: t.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>{t.label}</span>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : t.color, border: `1.5px solid ${t.color}`, flexShrink: 0, transition: "background-color 0.15s" }} />
+              </button>
+            );
+          })}
+          {(() => { const hidden = hiddenTypes.has("custom"); return (
+            <button onClick={() => onToggleType("custom")}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
+                    style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+              <Plus size={11} style={{ color: "#8b6f47", flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>Custom</span>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : "#8b6f47", border: "1.5px solid #8b6f47", flexShrink: 0, transition: "background-color 0.15s" }} />
+            </button>
+          ); })()}
+          <div className="px-3 py-1.5 border-t border-b text-xs uppercase tracking-widest"
+               style={{ borderColor: "#3a2010", color: "#a89070", fontFamily: "'IM Fell English SC', serif" }}>Hot Zones</div>
+          {[
+            { key: "environmental", label: "Environmental", icon: AlertTriangle, color: "#c4641e" },
+            { key: "faction",       label: "Faction",       icon: Crown,         color: "#9333ea" },
+          ].map(({ key, label, icon: Icon, color }) => {
+            const hidden = hiddenZoneKinds.has(key);
+            return (
+              <button key={key} onClick={() => onToggleZoneKind(key)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
+                      style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                <Icon size={11} style={{ color, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>{label}</span>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : color, border: `1.5px solid ${color}`, flexShrink: 0, transition: "background-color 0.15s" }} />
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
