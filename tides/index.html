@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#2a1810">
-  <title>Menagerie Coast — Campaign Chart</title>
+  <title>Campaign Charts</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -30,25 +30,27 @@
       font-family: 'IM Fell English', serif; font-style: italic; color: #5c4030;
       background: #d8c094;
     }
+    .tab-scroll::-webkit-scrollbar { height: 4px; }
+    .tab-scroll::-webkit-scrollbar-track { background: transparent; }
+    .tab-scroll::-webkit-scrollbar-thumb { background: #8b6f47; border-radius: 2px; }
   </style>
 </head>
 <body>
   <div id="root"><div class="splash">Unfurling the chart…</div></div>
 
   <script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useCallback } = React;
 
 // ============================================================
-//  API client (talks to api.php in the same folder)
+//  API
 // ============================================================
-const API = "api.php";
-// Match the SECRET in api.php if you set one. Empty = no auth.
+const API    = "api.php";
 const SECRET = "";
-
 const authHeaders = () => SECRET ? { "X-Secret": SECRET } : {};
 
-async function api(action, opts = {}) {
-  const res = await fetch(`${API}?action=${action}`, opts);
+async function api(action, mapId, opts = {}) {
+  const mapQ = mapId ? `&map=${encodeURIComponent(mapId)}` : "";
+  const res = await fetch(`${API}?action=${action}${mapQ}`, opts);
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try { const j = await res.json(); if (j?.error) msg = j.error; } catch {}
@@ -56,14 +58,21 @@ async function api(action, opts = {}) {
   }
   return res.json();
 }
-const apiLoad      = ()           => api("load");
-const apiSaveMeta  = (pins, zones)=> api("savemeta", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ pins, zones }) });
-const apiSaveMap   = (dataUrl)    => api("savemap",  { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ data: dataUrl }) });
-const apiClearMap  = ()           => api("clearmap", { method: "POST", headers: { ...authHeaders() } });
-const mapImageUrl  = (v)          => `${API}?action=getmap${v ? "&v=" + v : ""}`;
 
-// Compress / downscale an image client-side so it fits within typical PHP
-// upload limits while preserving readable resolution.
+const apiListMaps       = ()                  => api("listmaps", null);
+const apiNewMap         = (name)              => api("newmap", null, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
+const apiRenameMap      = (id, name)          => api("renamemap", id, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
+const apiDeleteMap      = (id)               => api("deletemap", id, { method: "POST", headers: { ...authHeaders() } });
+const apiLoad           = (mapId)            => api("load", mapId);
+const apiSaveMeta       = (mapId, pins, zones) => api("savemeta", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ pins, zones }) });
+const apiSaveMap        = (mapId, dataUrl)   => api("savemap", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ data: dataUrl }) });
+const apiClearMap       = (mapId)            => api("clearmap", mapId, { method: "POST", headers: { ...authHeaders() } });
+const mapImageUrl       = (mapId, v)         => `${API}?action=getmap&map=${encodeURIComponent(mapId)}${v ? "&v=" + v : ""}`;
+const apiListSnapshots  = (mapId)            => api("listsnapshots", mapId);
+const apiSaveSnapshot   = (mapId, label)     => api("savesnapshot", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ label }) });
+const apiLoadSnapshot   = (mapId, snapId)    => fetch(`${API}?action=loadsnapshot&map=${encodeURIComponent(mapId)}&snapshot=${encodeURIComponent(snapId)}`, { method: "POST", headers: { ...authHeaders() } }).then(r => r.json());
+const apiDeleteSnapshot = (mapId, snapId)    => fetch(`${API}?action=deletesnapshot&map=${encodeURIComponent(mapId)}&snapshot=${encodeURIComponent(snapId)}`, { method: "POST", headers: { ...authHeaders() } }).then(r => r.json());
+
 function compressImage(file, { maxDim = 2400, quality = 0.82 } = {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -78,7 +87,7 @@ function compressImage(file, { maxDim = 2400, quality = 0.82 } = {}) {
         const canvas = document.createElement("canvas");
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext("2d");
-        ctx.fillStyle = "#fff"; // safe background for transparent PNGs
+        ctx.fillStyle = "#fff";
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL("image/jpeg", quality));
@@ -90,7 +99,7 @@ function compressImage(file, { maxDim = 2400, quality = 0.82 } = {}) {
 }
 
 // ============================================================
-//  Icons (subset of Lucide, inlined as React components)
+//  Icons
 // ============================================================
 const Svg = ({ size = 24, children, ...rest }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -98,24 +107,29 @@ const Svg = ({ size = 24, children, ...rest }) => (
     {children}
   </svg>
 );
-const MapPin = (p) => <Svg {...p}><path d="M20 10c0 7-8 13-8 13s-8-6-8-13a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></Svg>;
-const Skull  = (p) => <Svg {...p}><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></Svg>;
-const BookOpen = (p) => <Svg {...p}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></Svg>;
-const Users  = (p) => <Svg {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Svg>;
-const Coins  = (p) => <Svg {...p}><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></Svg>;
-const Swords = (p) => <Svg {...p}><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></Svg>;
-const Eye    = (p) => <Svg {...p}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></Svg>;
-const X      = (p) => <Svg {...p}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></Svg>;
-const Trash2 = (p) => <Svg {...p}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></Svg>;
-const Upload = (p) => <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></Svg>;
-const Compass= (p) => <Svg {...p}><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></Svg>;
+const MapPin    = (p) => <Svg {...p}><path d="M20 10c0 7-8 13-8 13s-8-6-8-13a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></Svg>;
+const Skull     = (p) => <Svg {...p}><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></Svg>;
+const BookOpen  = (p) => <Svg {...p}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></Svg>;
+const Users     = (p) => <Svg {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Svg>;
+const Coins     = (p) => <Svg {...p}><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></Svg>;
+const Swords    = (p) => <Svg {...p}><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></Svg>;
+const Eye       = (p) => <Svg {...p}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></Svg>;
+const X         = (p) => <Svg {...p}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></Svg>;
+const Trash2    = (p) => <Svg {...p}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></Svg>;
+const Upload    = (p) => <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></Svg>;
+const Compass   = (p) => <Svg {...p}><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></Svg>;
 const AlertTriangle = (p) => <Svg {...p}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></Svg>;
-const Anchor = (p) => <Svg {...p}><circle cx="12" cy="5" r="3"/><line x1="12" x2="12" y1="22" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></Svg>;
-const Scroll = (p) => <Svg {...p}><path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/></Svg>;
-const ZoomIn = (p) => <Svg {...p}><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/></Svg>;
-const ZoomOut= (p) => <Svg {...p}><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="8" x2="14" y1="11" y2="11"/></Svg>;
-const Move   = (p) => <Svg {...p}><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/></Svg>;
+const Anchor    = (p) => <Svg {...p}><circle cx="12" cy="5" r="3"/><line x1="12" x2="12" y1="22" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></Svg>;
+const Scroll    = (p) => <Svg {...p}><path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/></Svg>;
+const ZoomIn    = (p) => <Svg {...p}><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/></Svg>;
+const ZoomOut   = (p) => <Svg {...p}><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="8" x2="14" y1="11" y2="11"/></Svg>;
+const Move      = (p) => <Svg {...p}><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/></Svg>;
 const Crosshair = (p) => <Svg {...p}><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></Svg>;
+const Plus      = (p) => <Svg {...p}><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></Svg>;
+const Camera    = (p) => <Svg {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></Svg>;
+const RotateCcw = (p) => <Svg {...p}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></Svg>;
+const Pencil    = (p) => <Svg {...p}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></Svg>;
+const ChevronDown = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9"/></Svg>;
 
 // ============================================================
 //  Constants
@@ -131,129 +145,311 @@ const PIN_TYPES = {
 };
 
 const DANGER_LEVELS = {
-  safe:    { label: "Safe",    fill: "rgba(74, 103, 65, 0.18)",  stroke: "#4a6741", desc: "Common encounters: travelers, merchants, minor wildlife." },
-  low:     { label: "Low",     fill: "rgba(184, 134, 11, 0.22)", stroke: "#b8860b", desc: "Wandering bandits, weak beasts, navigational hazards." },
-  medium:  { label: "Medium",  fill: "rgba(196, 100, 30, 0.28)", stroke: "#c4641e", desc: "Organized threats, dangerous fauna, magical disturbances." },
-  high:    { label: "High",    fill: "rgba(139, 26, 26, 0.32)",  stroke: "#8b1a1a", desc: "Apex predators, raiding parties, elite cultists." },
-  lethal:  { label: "Lethal",  fill: "rgba(60, 8, 8, 0.45)",     stroke: "#3c0808", desc: "Legendary creatures, planar incursions, certain death." },
+  safe:   { label: "Safe",   fill: "rgba(74, 103, 65, 0.18)",  stroke: "#4a6741", desc: "Common encounters: travelers, merchants, minor wildlife." },
+  low:    { label: "Low",    fill: "rgba(184, 134, 11, 0.22)", stroke: "#b8860b", desc: "Wandering bandits, weak beasts, navigational hazards." },
+  medium: { label: "Medium", fill: "rgba(196, 100, 30, 0.28)", stroke: "#c4641e", desc: "Organized threats, dangerous fauna, magical disturbances." },
+  high:   { label: "High",   fill: "rgba(139, 26, 26, 0.32)",  stroke: "#8b1a1a", desc: "Apex predators, raiding parties, elite cultists." },
+  lethal: { label: "Lethal", fill: "rgba(60, 8, 8, 0.45)",     stroke: "#3c0808", desc: "Legendary creatures, planar incursions, certain death." },
 };
 
 // ============================================================
-//  Main component
+//  Root: manages maps list + active map
 // ============================================================
-function MenagerieMap() {
-  const [map, setMap] = useState(null);
-  const [pins, setPins] = useState([]);
-  const [zones, setZones] = useState([]);
-  const [mode, setMode] = useState("view");
+function App() {
+  const [maps, setMaps]           = useState(null); // null = loading
+  const [activeMapId, setActiveMapId] = useState(null);
+  const [globalError, setGlobalError] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { maps: list } = await apiListMaps();
+        if (!list || list.length === 0) {
+          // First run with empty server — create a default map
+          const created = await apiNewMap("Menagerie Coast");
+          setMaps([{ id: created.id, name: created.name }]);
+          setActiveMapId(created.id);
+        } else {
+          setMaps(list);
+          setActiveMapId(list[0].id);
+        }
+      } catch (e) {
+        setGlobalError("Could not reach the server: " + e.message);
+        setMaps([]);
+      }
+    })();
+  }, []);
+
+  const handleNewMap = async () => {
+    const name = prompt("Name for the new map:");
+    if (!name?.trim()) return;
+    try {
+      const created = await apiNewMap(name.trim());
+      const fresh = await apiListMaps();
+      setMaps(fresh.maps);
+      setActiveMapId(created.id);
+    } catch (e) {
+      alert("Could not create map: " + e.message);
+    }
+  };
+
+  const handleRenameMap = async (id, currentName) => {
+    const name = prompt("Rename map:", currentName);
+    if (!name?.trim() || name.trim() === currentName) return;
+    try {
+      await apiRenameMap(id, name.trim());
+      setMaps(prev => prev.map(m => m.id === id ? { ...m, name: name.trim() } : m));
+    } catch (e) {
+      alert("Could not rename: " + e.message);
+    }
+  };
+
+  const handleDeleteMap = async (id) => {
+    const m = maps.find(m => m.id === id);
+    if (!confirm(`Delete "${m?.name}"? This cannot be undone.`)) return;
+    try {
+      await apiDeleteMap(id);
+      const fresh = await apiListMaps();
+      setMaps(fresh.maps);
+      if (activeMapId === id) setActiveMapId(fresh.maps[0]?.id ?? null);
+    } catch (e) {
+      alert("Could not delete: " + e.message);
+    }
+  };
+
+  if (maps === null) return <div className="splash">Unfurling the chart…</div>;
+
+  if (globalError) {
+    return (
+      <div className="splash flex-col gap-3 text-center px-8">
+        <AlertTriangle size={32} style={{ color: "#8b1a1a" }} />
+        <p style={{ color: "#5c1a1a" }}>{globalError}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-full flex flex-col" style={{ fontFamily: "'EB Garamond', Georgia, serif", background: `radial-gradient(ellipse at 20% 10%, #e8d4a8 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, #c9a875 0%, transparent 60%), radial-gradient(ellipse at 50% 50%, #d8c094 0%, #b8966a 100%)`, color: "#2a1810" }}>
+      {/* Paper grain overlay */}
+      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.15  0 0 0 0 0.1  0 0 0 0 0.05  0 0 0 0.18 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>")`, mixBlendMode: "multiply", opacity: 0.55, zIndex: 0 }} />
+
+      {/* Tab bar */}
+      <MapTabBar
+        maps={maps}
+        activeMapId={activeMapId}
+        onSelect={setActiveMapId}
+        onNew={handleNewMap}
+        onRename={handleRenameMap}
+        onDelete={handleDeleteMap}
+      />
+
+      {/* Active map canvas */}
+      <div className="flex-1 overflow-hidden relative" style={{ zIndex: 1 }}>
+        {activeMapId && (
+          <MapCanvas key={activeMapId} mapId={activeMapId} mapName={maps.find(m => m.id === activeMapId)?.name ?? ""} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  Tab bar
+// ============================================================
+function MapTabBar({ maps, activeMapId, onSelect, onNew, onRename, onDelete }) {
+  return (
+    <div className="flex items-stretch overflow-x-auto tab-scroll flex-shrink-0"
+         style={{ borderBottom: "2px solid #5c4030", backgroundColor: "rgba(42, 24, 16, 0.93)", minHeight: 38, zIndex: 10 }}>
+      {maps.map(m => (
+        <MapTab
+          key={m.id}
+          map={m}
+          active={m.id === activeMapId}
+          onSelect={() => onSelect(m.id)}
+          onRename={() => onRename(m.id, m.name)}
+          onDelete={maps.length > 1 ? () => onDelete(m.id) : null}
+        />
+      ))}
+      <button
+        onClick={onNew}
+        className="flex items-center gap-1 px-3 py-1 text-xs opacity-60 hover:opacity-100 flex-shrink-0 transition-opacity"
+        style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }}
+        title="New map">
+        <Plus size={13} /> New Map
+      </button>
+    </div>
+  );
+}
+
+function MapTab({ map, active, onSelect, onRename, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e) => { if (!menuRef.current?.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuOpen]);
+
+  return (
+    <div className={`flex items-center gap-1 px-3 py-1 flex-shrink-0 relative border-r cursor-pointer transition-colors`}
+         style={{
+           borderColor: "#5c4030",
+           backgroundColor: active ? "rgba(244, 232, 208, 0.15)" : "transparent",
+           borderBottom: active ? "2px solid #e8d4a8" : "2px solid transparent",
+           marginBottom: -2,
+         }}
+         onClick={onSelect}>
+      <span style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 13, color: active ? "#f4e8d0" : "#a89070", whiteSpace: "nowrap" }}>
+        {map.name}
+      </span>
+      <div className="relative" ref={menuRef} onClick={e => e.stopPropagation()}>
+        <button
+          className="ml-1 p-0.5 rounded opacity-50 hover:opacity-100 transition-opacity"
+          style={{ color: "#f4e8d0" }}
+          onClick={() => setMenuOpen(o => !o)}
+          title="Map options">
+          <ChevronDown size={11} />
+        </button>
+        {menuOpen && (
+          <div className="absolute top-full left-0 mt-1 rounded shadow-lg z-50 overflow-hidden"
+               style={{ backgroundColor: "rgba(42, 24, 16, 0.97)", border: "1px solid #8b6f47", minWidth: 120 }}>
+            <button onClick={() => { setMenuOpen(false); onRename(); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/10 text-left"
+                    style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }}>
+              <Pencil size={12} /> Rename
+            </button>
+            {onDelete && (
+              <button onClick={() => { setMenuOpen(false); onDelete(); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/10 text-left"
+                      style={{ color: "#c93838", fontFamily: "'IM Fell English SC', serif" }}>
+                <Trash2 size={12} /> Delete
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  MapCanvas — per-map state, fully isolated via key=mapId
+// ============================================================
+function MapCanvas({ mapId, mapName }) {
+  const [map, setMap]               = useState(null);
+  const [pins, setPins]             = useState([]);
+  const [zones, setZones]           = useState([]);
+  const [mode, setMode]             = useState("view");
   const [editingItem, setEditingItem] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
-  const [drawing, setDrawing] = useState(null);
-  const [loaded, setLoaded] = useState(false);
+  const [drawing, setDrawing]       = useState(null);
+  const [loaded, setLoaded]         = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
   const [storageError, setStorageError] = useState(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [panning, setPanning] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window === "undefined" ? true : window.innerWidth >= 768);
+  const [zoom, setZoom]             = useState(1);
+  const [pan, setPan]               = useState({ x: 0, y: 0 });
+  const [panning, setPanning]       = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+  const [snapshotsOpen, setSnapshotsOpen] = useState(false);
+  const [snapshots, setSnapshots]   = useState([]);
+  const [snapshotStatus, setSnapshotStatus] = useState("idle");
 
-  const wrapRef = useRef(null);
-  const mapRef = useRef(null);
+  const wrapRef    = useRef(null);
+  const mapRef     = useRef(null);
   const fileInputRef = useRef(null);
-  const pointersRef = useRef(new Map());
-  const gestureRef = useRef(null);
-  const lastVersionRef = useRef(0);
+  const pointersRef  = useRef(new Map());
+  const gestureRef   = useRef(null);
+  const lastVersionRef    = useRef(0);
   const lastMapVersionRef = useRef(0);
-  const editingRef = useRef(null); // mirror editingItem so polling sees latest
+  const editingRef        = useRef(null);
   useEffect(() => { editingRef.current = editingItem; }, [editingItem]);
 
   const triggerFileSelect = () => fileInputRef.current?.click();
 
-  // ---------- Initial load ----------
+  // Initial load
   useEffect(() => {
     (async () => {
       try {
-        const data = await apiLoad();
+        const data = await apiLoad(mapId);
         setPins(data.pins || []);
         setZones(data.zones || []);
         lastVersionRef.current = data.version || 0;
         if (data.hasMap) {
           lastMapVersionRef.current = data.mapVersion || 0;
-          setMap(mapImageUrl(data.mapVersion));
+          setMap(mapImageUrl(mapId, data.mapVersion));
         }
+        const { snapshots: snaps } = await apiListSnapshots(mapId);
+        setSnapshots(snaps || []);
       } catch (e) {
         setStorageError("Could not reach the server: " + e.message);
       }
       setLoaded(true);
     })();
-  }, []);
+  }, [mapId]);
 
-  // ---------- Save meta (debounced) ----------
-  const skipNextSave = useRef(true); // skip first save (initial load)
+  // Autosave meta
+  const skipNextSave = useRef(true);
   useEffect(() => {
     if (!loaded) return;
     if (skipNextSave.current) { skipNextSave.current = false; return; }
     setSaveStatus("saving");
     const t = setTimeout(async () => {
       try {
-        const res = await apiSaveMeta(pins, zones);
+        const res = await apiSaveMeta(mapId, pins, zones);
         lastVersionRef.current = res.version || lastVersionRef.current;
         setSaveStatus("saved");
         setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
-      } catch (err) {
+      } catch {
         setSaveStatus("error");
       }
     }, 400);
     return () => clearTimeout(t);
   }, [pins, zones, loaded]);
 
-  // ---------- Poll for changes from other clients ----------
+  // Poll
   useEffect(() => {
     if (!loaded) return;
     let alive = true;
     const tick = async () => {
-      if (!alive) return;
-      // Don't disturb someone in the middle of an edit, or while saving
-      if (editingRef.current || saveStatus === "saving") return;
+      if (!alive || editingRef.current || saveStatus === "saving") return;
       try {
-        const data = await apiLoad();
+        const data = await apiLoad(mapId);
         if (!alive) return;
         if ((data.version || 0) > lastVersionRef.current) {
           lastVersionRef.current = data.version;
           setPins(data.pins || []);
           setZones(data.zones || []);
-          skipNextSave.current = true; // incoming change shouldn't echo back
+          skipNextSave.current = true;
         }
         if ((data.mapVersion || 0) > lastMapVersionRef.current) {
           lastMapVersionRef.current = data.mapVersion;
-          setMap(mapImageUrl(data.mapVersion));
+          setMap(mapImageUrl(mapId, data.mapVersion));
         } else if (!data.hasMap && map) {
           setMap(null);
         }
-      } catch (e) { /* ignore network blips */ }
+      } catch {}
     };
     const id = setInterval(tick, 5000);
     const onFocus = () => tick();
     window.addEventListener("focus", onFocus);
     return () => { alive = false; clearInterval(id); window.removeEventListener("focus", onFocus); };
-  }, [loaded, saveStatus, map]);
+  }, [loaded, saveStatus, map, mapId]);
 
-  // ---------- Map upload ----------
+  // Map upload
   const handleMapUpload = async (e) => {
     const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-selecting the same file
+    e.target.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setStorageError("Please choose an image file.");
-      return;
-    }
+    if (!file.type.startsWith("image/")) { setStorageError("Please choose an image file."); return; }
     setStorageError(null);
     setSaveStatus("saving");
     try {
       const dataUrl = await compressImage(file);
-      const res = await apiSaveMap(dataUrl);
+      const res = await apiSaveMap(mapId, dataUrl);
       lastMapVersionRef.current = res.mapVersion || Date.now();
-      setMap(mapImageUrl(lastMapVersionRef.current));
+      setMap(mapImageUrl(mapId, lastMapVersionRef.current));
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
     } catch (err) {
@@ -265,7 +461,7 @@ function MenagerieMap() {
   const clearMap = async () => {
     if (!confirm("Remove the current map image? Pins and zones will stay.")) return;
     try {
-      await apiClearMap();
+      await apiClearMap(mapId);
       lastMapVersionRef.current = 0;
       setMap(null);
     } catch (e) {
@@ -273,15 +469,65 @@ function MenagerieMap() {
     }
   };
 
-  // ---------- Coords helper ----------
-  const eventToMapCoords = (e) => {
-    const rect = mapRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-    return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
+  // Snapshot actions
+  const handleSaveSnapshot = async () => {
+    const label = prompt("Snapshot label (leave blank for timestamp):");
+    if (label === null) return; // cancelled
+    setSnapshotStatus("saving");
+    try {
+      const snap = await apiSaveSnapshot(mapId, label.trim());
+      setSnapshots(prev => [...prev, snap]);
+      setSnapshotStatus("saved");
+      setTimeout(() => setSnapshotStatus("idle"), 1500);
+    } catch (e) {
+      setSnapshotStatus("error");
+      alert("Snapshot failed: " + e.message);
+    }
   };
 
-  // ---------- Pointer handling (mouse / touch / pen unified) ----------
+  const handleRestoreSnapshot = async (snap) => {
+    if (!confirm(`Restore snapshot "${snap.label}"? Current state will be overwritten.`)) return;
+    try {
+      const res = await apiLoadSnapshot(mapId, snap.id);
+      if (res.error) throw new Error(res.error);
+      // Reload everything from server
+      const data = await apiLoad(mapId);
+      setPins(data.pins || []);
+      setZones(data.zones || []);
+      lastVersionRef.current = data.version || 0;
+      skipNextSave.current = true;
+      if (data.hasMap) {
+        lastMapVersionRef.current = data.mapVersion || 0;
+        setMap(mapImageUrl(mapId, data.mapVersion));
+      } else {
+        lastMapVersionRef.current = 0;
+        setMap(null);
+      }
+    } catch (e) {
+      alert("Restore failed: " + e.message);
+    }
+  };
+
+  const handleDeleteSnapshot = async (snap) => {
+    if (!confirm(`Delete snapshot "${snap.label}"?`)) return;
+    try {
+      await apiDeleteSnapshot(mapId, snap.id);
+      setSnapshots(prev => prev.filter(s => s.id !== snap.id));
+    } catch (e) {
+      alert("Delete failed: " + e.message);
+    }
+  };
+
+  // Coords
+  const eventToMapCoords = (e) => {
+    const rect = mapRef.current.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top)  / rect.height)),
+    };
+  };
+
+  // Pointer handling
   const handleMapPointerDown = (e) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {}
@@ -291,33 +537,20 @@ function MenagerieMap() {
     if (count === 2) {
       const pts = [...pointersRef.current.values()];
       const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-      gestureRef.current = {
-        type: "pinch",
-        initialDist: dist || 1,
-        initialZoom: zoom,
-        initialPan: { ...pan },
-        initialMid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 },
-      };
-      setDrawing(null);
-      setPanning(null);
-      return;
+      gestureRef.current = { type: "pinch", initialDist: dist || 1, initialZoom: zoom, initialPan: { ...pan }, initialMid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 } };
+      setDrawing(null); setPanning(null); return;
     }
     if (count !== 1) return;
 
     if (mode === "pan") {
-      setPanning({ startX: e.clientX, startY: e.clientY, origX: pan.x, origY: pan.y });
-      return;
+      setPanning({ startX: e.clientX, startY: e.clientY, origX: pan.x, origY: pan.y }); return;
     }
     if (mode === "pin") {
       const { x, y } = eventToMapCoords(e);
-      const newPin = {
-        id: "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
-        x, y, title: "New Pin", description: "", type: "quest",
-      };
+      const newPin = { id: "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x, y, title: "New Pin", description: "", type: "quest" };
       setPins(prev => [...prev, newPin]);
       setEditingItem({ kind: "pin", id: newPin.id });
-      setMode("view");
-      return;
+      setMode("view"); return;
     }
     if (mode === "zone") {
       const { x, y } = eventToMapCoords(e);
@@ -326,26 +559,17 @@ function MenagerieMap() {
   };
 
   const handleMapPointerMove = (e) => {
-    if (pointersRef.current.has(e.pointerId)) {
-      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    }
+    if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (gestureRef.current?.type === "pinch" && pointersRef.current.size >= 2) {
       const pts = [...pointersRef.current.values()].slice(0, 2);
       const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-      const ratio = dist / gestureRef.current.initialDist;
-      const newZoom = Math.max(0.5, Math.min(6, gestureRef.current.initialZoom * ratio));
+      const newZoom = Math.max(0.5, Math.min(6, gestureRef.current.initialZoom * dist / gestureRef.current.initialDist));
       const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       setZoom(newZoom);
-      setPan({
-        x: gestureRef.current.initialPan.x + (mid.x - gestureRef.current.initialMid.x),
-        y: gestureRef.current.initialPan.y + (mid.y - gestureRef.current.initialMid.y),
-      });
+      setPan({ x: gestureRef.current.initialPan.x + (mid.x - gestureRef.current.initialMid.x), y: gestureRef.current.initialPan.y + (mid.y - gestureRef.current.initialMid.y) });
       return;
     }
-    if (panning) {
-      setPan({ x: panning.origX + (e.clientX - panning.startX), y: panning.origY + (e.clientY - panning.startY) });
-      return;
-    }
+    if (panning) { setPan({ x: panning.origX + (e.clientX - panning.startX), y: panning.origY + (e.clientY - panning.startY) }); return; }
     if (drawing) {
       const { x, y } = eventToMapCoords(e);
       setDrawing({ ...drawing, radius: Math.hypot(x - drawing.x, y - drawing.y) });
@@ -354,17 +578,11 @@ function MenagerieMap() {
 
   const handleMapPointerUp = (e) => {
     if (e?.pointerId !== undefined) pointersRef.current.delete(e.pointerId);
-    if (gestureRef.current?.type === "pinch" && pointersRef.current.size < 2) {
-      gestureRef.current = null; setPanning(null); setDrawing(null); return;
-    }
+    if (gestureRef.current?.type === "pinch" && pointersRef.current.size < 2) { gestureRef.current = null; setPanning(null); setDrawing(null); return; }
     if (panning && pointersRef.current.size === 0) { setPanning(null); return; }
     if (drawing && pointersRef.current.size === 0) {
       if (drawing.radius >= 0.015) {
-        const newZone = {
-          id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
-          x: drawing.x, y: drawing.y, radius: drawing.radius,
-          name: "New Hot Zone", dangerLevel: "medium", description: "", encounters: "",
-        };
+        const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x: drawing.x, y: drawing.y, radius: drawing.radius, name: "New Hot Zone", dangerLevel: "medium", description: "", encounters: "" };
         setZones(prev => [...prev, newZone]);
         setEditingItem({ kind: "zone", id: newZone.id });
         setMode("view");
@@ -377,16 +595,12 @@ function MenagerieMap() {
     const up = (e) => handleMapPointerUp(e);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
-    return () => {
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
-    };
+    return () => { window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
   }, [drawing, panning]);
 
   const handleWheel = (e) => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    setZoom(z => Math.max(0.5, Math.min(6, z * factor)));
+    setZoom(z => Math.max(0.5, Math.min(6, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
   };
   const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
 
@@ -395,61 +609,39 @@ function MenagerieMap() {
   const deletePin  = (id) => { setPins(prev => prev.filter(p => p.id !== id)); setEditingItem(null); setSelectedId(null); };
   const deleteZone = (id) => { setZones(prev => prev.filter(z => z.id !== id)); setEditingItem(null); setSelectedId(null); };
 
-  const editingObj = editingItem ? (editingItem.kind === "pin"
-    ? pins.find(p => p.id === editingItem.id)
-    : zones.find(z => z.id === editingItem.id)) : null;
+  const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
 
-  const cursorClass = {
-    view: "cursor-default",
-    pin:  "cursor-crosshair",
-    zone: "cursor-crosshair",
-    pan:  panning ? "cursor-grabbing" : "cursor-grab",
-  }[mode];
+  const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab" }[mode];
 
-  if (!loaded) {
-    return <div className="splash">Unfurling the chart…</div>;
-  }
+  if (!loaded) return <div className="splash">Unfurling the chart…</div>;
 
   return (
-    <div
-      className="w-full h-full relative overflow-hidden flex"
-      style={{
-        fontFamily: "'EB Garamond', Georgia, serif",
-        background: `radial-gradient(ellipse at 20% 10%, #e8d4a8 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, #c9a875 0%, transparent 60%), radial-gradient(ellipse at 50% 50%, #d8c094 0%, #b8966a 100%)`,
-        color: "#2a1810",
-      }}
-    >
-      {/* Paper grain */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.15  0 0 0 0 0.1  0 0 0 0 0.05  0 0 0 0.18 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>")`,
-        mixBlendMode: "multiply", opacity: 0.55,
-      }} />
-
-      {/* Hidden file input shared by all upload buttons */}
+    <div className="w-full h-full relative overflow-hidden flex">
+      {/* Hidden file input */}
       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleMapUpload}
              style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
              aria-hidden="true" tabIndex={-1} />
 
-      {/* ============== SIDEBAR ============== */}
+      {/* SIDEBAR */}
       <aside className={`relative h-full transition-all duration-300 border-r-2 flex flex-col ${sidebarOpen ? "w-80" : "w-0"}`}
              style={{ borderColor: "#5c4030", backgroundColor: "rgba(244, 232, 208, 0.85)", flexShrink: 0 }}>
         {sidebarOpen && (
           <>
-            <div className="px-5 pt-5 pb-3 border-b" style={{ borderColor: "#8b6f47" }}>
-              <div className="flex items-center gap-2 mb-1">
-                <Compass size={20} style={{ color: "#5c4030" }} />
-                <h1 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 22, letterSpacing: "0.04em" }}>Menagerie Coast</h1>
+            <div className="px-5 pt-4 pb-3 border-b" style={{ borderColor: "#8b6f47" }}>
+              <div className="flex items-center gap-2 mb-0.5">
+                <Compass size={18} style={{ color: "#5c4030" }} />
+                <h1 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 20, letterSpacing: "0.04em" }}>{mapName}</h1>
               </div>
-              <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 13, color: "#5c4030" }}>
+              <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>
                 A cartographer's ledger of perils &amp; promises
               </p>
             </div>
 
             <div className="overflow-y-auto flex-1 px-4 py-3">
               {pins.length === 0 && zones.length === 0 ? (
-                <div className="text-center py-12 px-4" style={{ color: "#5c4030", fontStyle: "italic" }}>
-                  <Scroll size={32} className="mx-auto mb-3 opacity-50" />
-                  <p style={{ fontFamily: "'IM Fell English', serif" }}>The chart is yet unmarked.<br/>Place a pin or trace a hot zone.</p>
+                <div className="text-center py-10 px-4" style={{ color: "#5c4030", fontStyle: "italic" }}>
+                  <Scroll size={28} className="mx-auto mb-3 opacity-50" />
+                  <p style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>The chart is yet unmarked.<br/>Place a pin or trace a hot zone.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -459,21 +651,17 @@ function MenagerieMap() {
                         Hot Zones · {zones.length}
                       </h3>
                       {zones.map(z => (
-                        <button key={z.id}
-                                onClick={() => { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); }}
+                        <button key={z.id} onClick={() => { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); }}
                                 className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5"
                                 style={{ border: `1.5px solid ${DANGER_LEVELS[z.dangerLevel].stroke}`, backgroundColor: DANGER_LEVELS[z.dangerLevel].fill }}>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 15 }}>{z.name}</span>
-                            <span className="text-xs uppercase tracking-wider whitespace-nowrap" style={{ color: DANGER_LEVELS[z.dangerLevel].stroke, fontWeight: 600 }}>
-                              {DANGER_LEVELS[z.dangerLevel].label}
-                            </span>
+                            <span className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{z.name}</span>
+                            <span className="text-xs uppercase tracking-wider whitespace-nowrap" style={{ color: DANGER_LEVELS[z.dangerLevel].stroke, fontWeight: 600 }}>{DANGER_LEVELS[z.dangerLevel].label}</span>
                           </div>
                         </button>
                       ))}
                     </div>
                   )}
-
                   {pins.length > 0 && (
                     <div>
                       <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
@@ -483,13 +671,12 @@ function MenagerieMap() {
                         const T = PIN_TYPES[p.type] || PIN_TYPES.quest;
                         const Ico = T.icon;
                         return (
-                          <button key={p.id}
-                                  onClick={() => { setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); }}
+                          <button key={p.id} onClick={() => { setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); }}
                                   className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5 flex items-center gap-2.5"
                                   style={{ backgroundColor: "rgba(255, 250, 235, 0.6)", border: `1px solid ${T.color}66` }}>
                             <span className="flex items-center justify-center rounded-full flex-shrink-0"
-                                  style={{ width: 26, height: 26, backgroundColor: T.color, color: "#f4e8d0" }}>
-                              <Ico size={14} />
+                                  style={{ width: 24, height: 24, backgroundColor: T.color, color: "#f4e8d0" }}>
+                              <Ico size={12} />
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{p.title}</div>
@@ -504,7 +691,43 @@ function MenagerieMap() {
               )}
             </div>
 
-            <div className="px-4 py-2.5 border-t text-xs" style={{ borderColor: "#8b6f47", color: "#5c4030", fontStyle: "italic", fontFamily: "'IM Fell English', serif" }}>
+            {/* Snapshots panel */}
+            <div className="border-t" style={{ borderColor: "#8b6f47" }}>
+              <button onClick={() => setSnapshotsOpen(o => !o)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-xs uppercase tracking-widest"
+                      style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
+                <span className="flex items-center gap-1.5"><Camera size={13} /> Snapshots {snapshots.length > 0 && `· ${snapshots.length}`}</span>
+                <ChevronDown size={13} style={{ transform: snapshotsOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+              </button>
+              {snapshotsOpen && (
+                <div className="px-4 pb-3">
+                  <button onClick={handleSaveSnapshot}
+                          className="w-full flex items-center justify-center gap-1.5 py-1.5 mb-2 rounded text-xs"
+                          style={{ backgroundColor: "rgba(42, 24, 16, 0.12)", border: "1px solid #8b6f47", color: "#2a1810", fontFamily: "'IM Fell English SC', serif" }}>
+                    <Camera size={12} />
+                    {snapshotStatus === "saving" ? "Saving…" : snapshotStatus === "saved" ? "✓ Saved" : "Take Snapshot"}
+                  </button>
+                  {snapshots.length === 0 ? (
+                    <p className="text-xs text-center italic py-1" style={{ color: "#8b6f47" }}>No snapshots yet.</p>
+                  ) : (
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {[...snapshots].reverse().map(snap => (
+                        <div key={snap.id} className="flex items-center gap-1 rounded px-2 py-1" style={{ backgroundColor: "rgba(255,250,235,0.5)", border: "1px solid #c4a86488" }}>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", color: "#2a1810" }}>{snap.label}</div>
+                            <div className="text-xs" style={{ color: "#8b6f47" }}>{new Date(snap.ts * 1000).toLocaleDateString()}</div>
+                          </div>
+                          <button onClick={() => handleRestoreSnapshot(snap)} title="Restore" className="p-1 rounded hover:bg-black/10" style={{ color: "#4a6741" }}><RotateCcw size={12} /></button>
+                          <button onClick={() => handleDeleteSnapshot(snap)} title="Delete" className="p-1 rounded hover:bg-black/10" style={{ color: "#8b1a1a" }}><Trash2 size={12} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-2 border-t text-xs" style={{ borderColor: "#8b6f47", color: "#5c4030", fontStyle: "italic", fontFamily: "'IM Fell English', serif" }}>
               {saveStatus === "saving" && "Inscribing in the ledger…"}
               {saveStatus === "saved"  && "✓ Inscribed."}
               {saveStatus === "error"  && "⚠ The ink would not take."}
@@ -520,7 +743,7 @@ function MenagerieMap() {
         </button>
       </aside>
 
-      {/* ============== MAP AREA ============== */}
+      {/* MAP AREA */}
       <main className="flex-1 relative overflow-hidden">
         {!map ? (
           <UploadGate onPickFile={triggerFileSelect} error={storageError} />
@@ -536,7 +759,7 @@ function MenagerieMap() {
               <div className="w-px h-6 mx-1" style={{ backgroundColor: "#8b6f47" }} />
               <ToolbarBtn onClick={() => setZoom(z => Math.min(6, z * 1.25))} icon={ZoomIn} label="" />
               <ToolbarBtn onClick={() => setZoom(z => Math.max(0.5, z / 1.25))} icon={ZoomOut} label="" />
-              <button onClick={resetView} className="px-2.5 py-1.5 text-xs uppercase tracking-wider rounded" style={{ color: "#f4e8d0" }} title="Reset view">Reset</button>
+              <button onClick={resetView} className="px-2.5 py-1.5 text-xs uppercase tracking-wider rounded" style={{ color: "#f4e8d0" }}>Reset</button>
             </div>
 
             {mode !== "view" && (
@@ -551,8 +774,7 @@ function MenagerieMap() {
             <div className="absolute top-4 right-4 z-20 flex flex-col gap-1.5">
               <button onClick={triggerFileSelect}
                       className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
-                      style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}
-                      title="Replace map">
+                      style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
                 <Upload size={14} />
                 <span className="hidden sm:inline">Replace Chart</span>
               </button>
@@ -568,13 +790,7 @@ function MenagerieMap() {
                  onPointerCancel={handleMapPointerUp}>
               <div ref={mapRef}
                    className="relative origin-center select-none"
-                   style={{
-                     transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                     transformOrigin: "center center",
-                     width: "100%", height: "100%",
-                     display: "flex", alignItems: "center", justifyContent: "center",
-                     transition: panning || drawing ? "none" : "transform 0.15s ease-out",
-                   }}>
+                   style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", transition: panning || drawing ? "none" : "transform 0.15s ease-out" }}>
                 <div className="relative" style={{ maxWidth: "100%", maxHeight: "100%" }}>
                   <img src={map} alt="Campaign map" draggable={false}
                        className="block max-w-full max-h-[100vh] pointer-events-none"
@@ -592,11 +808,8 @@ function MenagerieMap() {
                       return (
                         <g key={z.id} className="pointer-events-auto" style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
-                          <circle cx={z.x} cy={z.y} r={z.radius}
-                                  fill={D.fill} stroke={D.stroke}
-                                  strokeWidth={sel ? 0.004 : 0.0025}
-                                  strokeDasharray="0.012 0.008"
-                                  vectorEffect="non-scaling-stroke">
+                          <circle cx={z.x} cy={z.y} r={z.radius} fill={D.fill} stroke={D.stroke}
+                                  strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke">
                             {sel && <animate attributeName="stroke-dashoffset" values="0;0.04" dur="2s" repeatCount="indefinite" />}
                           </circle>
                         </g>
@@ -604,8 +817,7 @@ function MenagerieMap() {
                     })}
                     {drawing && (
                       <circle cx={drawing.x} cy={drawing.y} r={drawing.radius}
-                              fill="rgba(196, 100, 30, 0.2)" stroke="#5c4030"
-                              strokeWidth="0.003" strokeDasharray="0.01 0.008" />
+                              fill="rgba(196, 100, 30, 0.2)" stroke="#5c4030" strokeWidth="0.003" strokeDasharray="0.01 0.008" />
                     )}
                   </svg>
 
@@ -613,16 +825,7 @@ function MenagerieMap() {
                     const D = DANGER_LEVELS[z.dangerLevel];
                     return (
                       <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
-                           style={{
-                             left: `${z.x * 100}%`, top: `${z.y * 100}%`,
-                             transform: "translate(-50%, -50%)",
-                             fontFamily: "'IM Fell English SC', serif",
-                             color: D.stroke,
-                             textShadow: "0 0 4px rgba(244, 232, 208, 0.9), 0 0 4px rgba(244, 232, 208, 0.9)",
-                             fontSize: Math.max(9, Math.min(14, z.radius * 130)) / zoom + "px",
-                             letterSpacing: "0.05em", fontWeight: 600,
-                             maxWidth: `${z.radius * 180}%`, lineHeight: 1.1,
-                           }}>{z.name}</div>
+                           style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, transform: "translate(-50%, -50%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, textShadow: "0 0 4px rgba(244, 232, 208, 0.9), 0 0 4px rgba(244, 232, 208, 0.9)", fontSize: Math.max(9, Math.min(14, z.radius * 130)) / zoom + "px", letterSpacing: "0.05em", fontWeight: 600, maxWidth: `${z.radius * 180}%`, lineHeight: 1.1 }}>{z.name}</div>
                     );
                   })}
 
@@ -634,29 +837,15 @@ function MenagerieMap() {
                       <button key={p.id}
                               onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); } }}
                               className="absolute group"
-                              style={{
-                                left: `${p.x * 100}%`, top: `${p.y * 100}%`,
-                                transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`,
-                                transformOrigin: "bottom center",
-                                cursor: mode === "view" ? "pointer" : "inherit",
-                                zIndex: sel ? 15 : 10,
-                                animation: "pinDrop 0.4s ease-out",
-                              }}>
-                        <div className="absolute" style={{
-                          bottom: -3, left: "50%", transform: "translateX(-50%)",
-                          width: 18, height: 5,
-                          background: "radial-gradient(ellipse, rgba(42,24,16,0.5) 0%, transparent 70%)",
-                        }} />
+                              style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: mode === "view" ? "pointer" : "inherit", zIndex: sel ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
+                        <div className="absolute" style={{ bottom: -3, left: "50%", transform: "translateX(-50%)", width: 18, height: 5, background: "radial-gradient(ellipse, rgba(42,24,16,0.5) 0%, transparent 70%)" }} />
                         <div className="relative flex items-center justify-center transition-transform group-hover:scale-110"
                              style={{ width: 32, height: 38, filter: sel ? `drop-shadow(0 0 6px ${T.glow})` : "drop-shadow(0 2px 3px rgba(0,0,0,0.4))" }}>
                           <svg width="32" height="38" viewBox="0 0 32 38" className="absolute inset-0">
-                            <path d="M16 0 C7 0 1 7 1 15 C1 24 16 38 16 38 C16 38 31 24 31 15 C31 7 25 0 16 0 Z"
-                                  fill={T.color} stroke="#2a1810" strokeWidth="1.5" />
+                            <path d="M16 0 C7 0 1 7 1 15 C1 24 16 38 16 38 C16 38 31 24 31 15 C31 7 25 0 16 0 Z" fill={T.color} stroke="#2a1810" strokeWidth="1.5" />
                             <circle cx="16" cy="14" r="9" fill="#f4e8d0" />
                           </svg>
-                          <div className="relative" style={{ marginTop: -8, color: T.color }}>
-                            <Ico size={13} strokeWidth={2.5} />
-                          </div>
+                          <div className="relative" style={{ marginTop: -8, color: T.color }}><Ico size={13} strokeWidth={2.5} /></div>
                         </div>
                         <div className="absolute left-1/2 -translate-x-1/2 -top-7 px-2 py-0.5 rounded text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none"
                              style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", fontFamily: "'IM Fell English', serif", border: "1px solid #8b6f47" }}>
@@ -699,15 +888,14 @@ function MenagerieMap() {
   );
 }
 
+// ============================================================
+//  Shared UI components
+// ============================================================
 function ToolbarBtn({ active, onClick, icon: Icon, label }) {
   return (
     <button onClick={onClick}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
-            style={{
-              color: active ? "#2a1810" : "#f4e8d0",
-              backgroundColor: active ? "#e8d4a8" : "transparent",
-              fontFamily: "'IM Fell English SC', serif",
-            }}
+            style={{ color: active ? "#2a1810" : "#f4e8d0", backgroundColor: active ? "#e8d4a8" : "transparent", fontFamily: "'IM Fell English SC', serif" }}
             title={label}>
       <Icon size={14} />
       {label && <span className="hidden sm:inline">{label}</span>}
@@ -726,9 +914,9 @@ function UploadGate({ onPickFile, error }) {
           </div>
         ))}
         <Compass size={48} className="mx-auto mb-3" style={{ color: "#5c4030" }} />
-        <h2 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 28, letterSpacing: "0.04em" }}>The Menagerie Coast</h2>
+        <h2 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 28, letterSpacing: "0.04em" }}>Chart Awaits</h2>
         <p className="mt-2 mb-5" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", color: "#5c4030" }}>
-          A campaign chart for your party.<br />Begin by hoisting your map aboard.
+          Begin by hoisting your map aboard.
         </p>
         <button onClick={onPickFile}
                 className="inline-flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded"
@@ -741,9 +929,6 @@ function UploadGate({ onPickFile, error }) {
             <span>{error}</span>
           </div>
         )}
-        <p className="mt-5 text-xs leading-relaxed" style={{ color: "#5c4030", fontStyle: "italic" }}>
-          Use a scan or screenshot from your own copy of the <em>Explorer's Guide to Wildemount</em>. Images are scaled to 2400px wide and stored on your NAS.
-        </p>
       </div>
     </div>
   );
@@ -758,14 +943,10 @@ function EditPanel({ item, kind, onClose, onUpdatePin, onUpdateZone, onDelete })
         <h3 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 18, color: "#2a1810", letterSpacing: "0.04em" }}>
           {kind === "pin" ? "Pin Inscription" : "Hot Zone Decree"}
         </h3>
-        <button onClick={onClose} className="p-1 rounded hover:bg-black/10" title="Close">
-          <X size={20} style={{ color: "#5c4030" }} />
-        </button>
+        <button onClick={onClose} className="p-1 rounded hover:bg-black/10"><X size={20} style={{ color: "#5c4030" }} /></button>
       </div>
       <div className="px-5 py-4 space-y-4">
-        {kind === "pin"
-          ? <PinEditor item={item} onUpdate={onUpdatePin} />
-          : <ZoneEditor item={item} onUpdate={onUpdateZone} />}
+        {kind === "pin" ? <PinEditor item={item} onUpdate={onUpdatePin} /> : <ZoneEditor item={item} onUpdate={onUpdateZone} />}
         <div className="pt-3 border-t" style={{ borderColor: "#8b6f47" }}>
           <button onClick={() => { if (confirm(`Remove this ${kind}?`)) onDelete(); }}
                   className="flex items-center gap-2 px-3 py-1.5 text-sm rounded"
@@ -804,8 +985,7 @@ function PinEditor({ item, onUpdate }) {
             return (
               <button key={key} onClick={() => onUpdate({ type: key })}
                       className="flex flex-col items-center gap-1 py-2 rounded"
-                      style={{ backgroundColor: active ? t.color : "rgba(255, 250, 235, 0.6)", color: active ? "#f4e8d0" : t.color, border: `1px solid ${active ? t.color : t.color + "55"}` }}
-                      title={t.label}>
+                      style={{ backgroundColor: active ? t.color : "rgba(255, 250, 235, 0.6)", color: active ? "#f4e8d0" : t.color, border: `1px solid ${active ? t.color : t.color + "55"}` }}>
                 <Icon size={16} />
                 <span className="text-[10px] uppercase tracking-wider">{t.label}</span>
               </button>
@@ -888,7 +1068,7 @@ function CompassRose({ size = 80 }) {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<MenagerieMap />);
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 </body>
 </html>
