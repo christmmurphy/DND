@@ -40,6 +40,14 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    @keyframes magicShimmer {
+      0%   { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: -0.2; }
+    }
+    .zone-circle:hover circle { stroke-opacity: 0.9 !important; filter: drop-shadow(0 0 4px currentColor); }
+    .zone-path:hover polyline  { stroke-opacity: 0.7 !important; }
+    .pin-tooltip-enter { opacity: 0; transform: translateY(6px); }
+    .pin-tooltip-enter-active { opacity: 1; transform: translateY(0); transition: opacity 0.2s, transform 0.2s; }
     .splash {
       position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
       font-family: 'IM Fell English', serif; font-style: italic; color: #5c4030;
@@ -160,6 +168,20 @@ const Undo2     = (p) => <Svg {...p}><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5
 const Redo2     = (p) => <Svg {...p}><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/></Svg>;
 const Check     = (p) => <Svg {...p}><polyline points="20 6 9 17 4 12"/></Svg>;
 const Download  = (p) => <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></Svg>;
+const GrabHand  = (p) => <Svg {...p}><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></Svg>;
+const Flame     = (p) => <Svg {...p}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></Svg>;
+const Mountain  = (p) => <Svg {...p}><path d="m8 3 4 8 5-5 5 15H2L8 3z"/></Svg>;
+const TreePine  = (p) => <Svg {...p}><path d="m17 14 3 3.1a1 1 0 0 1-.7 1.7H4.7a1 1 0 0 1-.7-1.7L7 14"/><path d="m14 6 3 3.1a1 1 0 0 1-.7 1.7H7.7a1 1 0 0 1-.7-1.7L10 6"/><path d="M12 2v4"/><path d="M10 22v-4"/><path d="M14 22v-4"/></Svg>;
+const Waves     = (p) => <Svg {...p}><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2"/></Svg>;
+const Crown     = (p) => <Svg {...p}><path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.43l4.02-2.884a.5.5 0 0 1 .794.519l-2.028 9.586a1 1 0 0 1-.973.785H5.282a1 1 0 0 1-.973-.785L2.28 6.934a.5.5 0 0 1 .794-.519l4.02 2.884a1 1 0 0 0 1.516-.43z"/></Svg>;
+const Star      = (p) => <Svg {...p}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></Svg>;
+const Zap       = (p) => <Svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Svg>;
+const Home      = (p) => <Svg {...p}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></Svg>;
+const Heart     = (p) => <Svg {...p}><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></Svg>;
+const Shield    = (p) => <Svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></Svg>;
+const Key       = (p) => <Svg {...p}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></Svg>;
+const Moon      = (p) => <Svg {...p}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></Svg>;
+const Gem       = (p) => <Svg {...p}><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></Svg>;
 
 // ============================================================
 //  Constants
@@ -183,6 +205,22 @@ const DANGER_LEVELS = {
 };
 
 const MAX_HISTORY = 4;
+
+const CUSTOM_ICONS = {
+  star: Star, flame: Flame, mountain: Mountain, tree: TreePine,
+  waves: Waves, crown: Crown, zap: Zap, home: Home,
+  heart: Heart, shield: Shield, key: Key, moon: Moon,
+  gem: Gem, skull: Skull, swords: Swords, anchor: Anchor,
+};
+
+function getPinType(p) {
+  if (p.type === "custom") {
+    const ico = CUSTOM_ICONS[p.customIconKey] || Star;
+    const col = p.customColor || "#7a5c3a";
+    return { label: p.customLabel || "Custom", icon: ico, color: col, glow: col };
+  }
+  return PIN_TYPES[p.type] || PIN_TYPES.quest;
+}
 
 // ============================================================
 //  Root — manages maps list, active map, URL hash
@@ -367,6 +405,7 @@ function MapCanvas({ mapId, mapName }) {
   const [snapshotsOpen, setSnapshotsOpen] = useState(false);
   const [snapshots, setSnapshots]   = useState([]);
   const [snapshotStatus, setSnapshotStatus] = useState("idle");
+  const [movingPin, setMovingPin] = useState(null);
   const [toasts, setToasts] = useState([]);
 
   const addToast = useCallback((message, type = "success") => {
@@ -704,7 +743,7 @@ function MapCanvas({ mapId, mapName }) {
 
   const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
 
-  const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", brush: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab" }[mode] || "cursor-default";
+  const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", brush: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab", movepin: movingPin ? "cursor-grabbing" : "cursor-default" }[mode] || "cursor-default";
 
   if (!loaded) return (
     <div className="splash flex-col gap-3">
@@ -762,7 +801,7 @@ function MapCanvas({ mapId, mapName }) {
                     <div>
                       <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Pins · {pins.length}</h3>
                       {pins.map(p => {
-                        const T = PIN_TYPES[p.type] || PIN_TYPES.quest;
+                        const T = getPinType(p);
                         const Ico = T.icon;
                         return (
                           <button key={p.id} onClick={() => { setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); focusOnItem(p.x, p.y); }}
@@ -849,9 +888,10 @@ function MapCanvas({ mapId, mapName }) {
               <ToolbarBtn active={mode === "view"}  onClick={() => setMode("view")}  icon={Eye}        label="Read" />
               <ToolbarBtn active={mode === "pan"}   onClick={() => setMode("pan")}   icon={Move}       label="Pan" />
               <Sep />
-              <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}     label="Pin" />
-              <ToolbarBtn active={mode === "zone"}  onClick={() => setMode("zone")}  icon={Crosshair}  label="Circle" />
-              <ToolbarBtn active={mode === "brush"} onClick={() => setMode("brush")} icon={Brush}      label="Brush" />
+              <ToolbarBtn active={mode === "pin"}     onClick={() => setMode("pin")}     icon={MapPin}    label="Pin" />
+              <ToolbarBtn active={mode === "movepin"} onClick={() => setMode("movepin")} icon={GrabHand} label="Drag" />
+              <ToolbarBtn active={mode === "zone"}   onClick={() => setMode("zone")}   icon={Crosshair} label="Circle" />
+              <ToolbarBtn active={mode === "brush"}  onClick={() => setMode("brush")}  icon={Brush}     label="Brush" />
               <Sep />
               <ToolbarBtn disabled={undoStack.length === 0} onClick={undo} icon={Undo2} label="Undo" title={`Undo (${undoStack.length})`} />
               <ToolbarBtn disabled={redoStack.length === 0} onClick={redo} icon={Redo2} label="Redo" />
@@ -865,10 +905,11 @@ function MapCanvas({ mapId, mapName }) {
             {mode !== "view" && (
               <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded text-sm"
                    style={{ backgroundColor: "rgba(244, 232, 208, 0.95)", border: "1px dashed #5c4030", fontFamily: "'IM Fell English', serif", fontStyle: "italic" }}>
-                {mode === "pin"   && "Click anywhere on the chart to place a pin."}
-                {mode === "zone"  && "Click and drag to inscribe a circular hot zone."}
-                {mode === "brush" && "Click and drag to paint a coastline or route."}
-                {mode === "pan"   && "Drag to reposition. Pinch or scroll to zoom."}
+                {mode === "pin"     && "Click anywhere on the chart to place a pin."}
+                {mode === "movepin" && "Click and drag any pin to reposition it."}
+                {mode === "zone"   && "Click and drag to inscribe a circular hot zone."}
+                {mode === "brush"  && "Click and drag to paint a coastline or route."}
+                {mode === "pan"    && "Drag to reposition. Pinch or scroll to zoom."}
               </div>
             )}
 
@@ -905,16 +946,36 @@ function MapCanvas({ mapId, mapName }) {
 
                   {/* SVG overlay: zones */}
                   <svg className="absolute inset-0 pointer-events-none" style={{ width: "100%", height: "100%" }} viewBox="0 0 1 1" preserveAspectRatio="none">
+                    <defs>
+                      {zones.map(z => {
+                        const D = DANGER_LEVELS[z.dangerLevel];
+                        return (
+                          <filter key={"glow-" + z.id} id={"glow-" + z.id} x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="0.006" result="blur"/>
+                            <feFlood floodColor={D.stroke} floodOpacity="0.6" result="color"/>
+                            <feComposite in="color" in2="blur" operator="in" result="glow"/>
+                            <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+                          </filter>
+                        );
+                      })}
+                    </defs>
 
                     {/* Circle zones */}
                     {zones.filter(z => !z.type || z.type === "circle").map(z => {
                       const D = DANGER_LEVELS[z.dangerLevel];
                       const sel = selectedId === z.id;
+                      const hov = selectedId !== z.id;
                       return (
-                        <g key={z.id} className="pointer-events-auto" style={{ cursor: "pointer" }}
+                        <g key={z.id} className="zone-circle pointer-events-auto" style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
+                          {/* Hover glow layer */}
+                          <circle cx={z.x} cy={z.y} r={z.radius} fill="none" stroke={D.stroke}
+                                  strokeWidth="0.006" strokeOpacity="0" vectorEffect="non-scaling-stroke"
+                                  style={{ transition: "stroke-opacity 0.3s" }}
+                                  className="zone-hover-glow" />
                           <circle cx={z.x} cy={z.y} r={z.radius} fill={D.fill} stroke={D.stroke}
-                                  strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke">
+                                  strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke"
+                                  filter={sel ? `url(#glow-${z.id})` : undefined}>
                             {sel && <animate attributeName="stroke-dashoffset" values="0;0.04" dur="2s" repeatCount="indefinite" />}
                           </circle>
                         </g>
@@ -927,14 +988,16 @@ function MapCanvas({ mapId, mapName }) {
                       const sel = selectedId === z.id;
                       const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
                       return (
-                        <g key={z.id} className="pointer-events-auto" style={{ cursor: "pointer" }}
+                        <g key={z.id} className="zone-path pointer-events-auto" style={{ cursor: "pointer" }}
                            onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
                           {/* Wide invisible hit area */}
                           <polyline points={pts} fill="none" stroke="transparent" strokeWidth="0.04" strokeLinecap="round" />
                           {/* Highlighter body */}
                           <polyline points={pts} fill="none" stroke={D.stroke}
-                                    strokeOpacity={sel ? 0.6 : 0.35} strokeWidth="0.022"
-                                    strokeLinecap="round" strokeLinejoin="round" />
+                                    strokeOpacity={sel ? 0.65 : 0.35} strokeWidth="0.022"
+                                    strokeLinecap="round" strokeLinejoin="round"
+                                    filter={sel ? `url(#glow-${z.id})` : undefined}
+                                    style={{ transition: "stroke-opacity 0.3s" }} />
                           {/* Crisp outline */}
                           <polyline points={pts} fill="none" stroke={D.stroke}
                                     strokeWidth={sel ? 0.004 : 0.0025} strokeLinecap="round" strokeLinejoin="round"
@@ -980,7 +1043,7 @@ function MapCanvas({ mapId, mapName }) {
 
                   {/* Danger / combat pulse rings (behind pins) */}
                   {pins.filter(p => p.type === "danger" || p.type === "combat").map(p => {
-                    const T = PIN_TYPES[p.type];
+                    const T = getPinType(p);
                     const scale = 1 / Math.max(0.5, zoom * 0.7);
                     return (
                       <div key={"pulse-" + p.id} className="absolute pointer-events-none"
@@ -993,36 +1056,61 @@ function MapCanvas({ mapId, mapName }) {
 
                   {/* Pins */}
                   {pins.map(p => {
-                    const T = PIN_TYPES[p.type] || PIN_TYPES.quest;
+                    const T = getPinType(p);
                     const Ico = T.icon;
                     const sel = selectedId === p.id;
+                    const isMoving = movingPin === p.id;
+                    const pinCursor = mode === "movepin" ? (isMoving ? "grabbing" : "grab") : (mode === "view" ? "pointer" : "inherit");
                     return (
                       <button key={p.id}
-                              onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); } }}
+                              onPointerDown={(e) => {
+                                if (mode === "movepin") {
+                                  e.stopPropagation();
+                                  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+                                  pushToHistory();
+                                  setMovingPin(p.id);
+                                } else if (mode === "view") {
+                                  e.stopPropagation(); setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id });
+                                }
+                              }}
+                              onPointerMove={(e) => {
+                                if (movingPin === p.id) {
+                                  const { x, y } = eventToMapCoords(e);
+                                  updatePin(p.id, { x, y });
+                                }
+                              }}
+                              onPointerUp={(e) => { if (movingPin === p.id) setMovingPin(null); }}
+                              onPointerCancel={(e) => { if (movingPin === p.id) setMovingPin(null); }}
                               className="absolute group"
-                              style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: mode === "view" ? "pointer" : "inherit", zIndex: sel ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
+                              style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: pinCursor, zIndex: sel || isMoving ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
                         <div className="absolute" style={{ bottom: -3, left: "50%", transform: "translateX(-50%)", width: 22, height: 6, background: "radial-gradient(ellipse, rgba(42,24,16,0.6) 0%, transparent 70%)" }} />
-                        <div className="relative flex items-center justify-center transition-transform group-hover:scale-110"
-                             style={{ width: 36, height: 44, filter: sel ? `drop-shadow(0 0 8px ${T.glow}) drop-shadow(0 0 3px ${T.glow})` : `drop-shadow(0 2px 5px rgba(0,0,0,0.75)) drop-shadow(0 0 10px rgba(255,255,255,0.2))` }}>
-                          <svg width="36" height="44" viewBox="0 0 36 44" className="absolute inset-0">
+                        <div className="relative flex items-center justify-center"
+                             style={{ width: 36, height: 44, transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1), filter 0.2s", transform: isMoving ? "scale(1.2)" : "scale(1)", filter: sel || isMoving ? `drop-shadow(0 0 10px ${T.glow}) drop-shadow(0 0 4px ${T.glow})` : `drop-shadow(0 2px 5px rgba(0,0,0,0.75)) drop-shadow(0 0 10px rgba(255,255,255,0.2))` }}>
+                          {/* Magical shimmer ring on hover */}
+                          <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 pointer-events-none"
+                               style={{ background: `radial-gradient(circle at 50% 40%, ${T.glow}33 0%, transparent 70%)`, transition: "opacity 0.3s", borderRadius: "50% 50% 40% 40% / 60% 60% 40% 40%", width: 36, height: 44 }} />
+                          <svg width="36" height="44" viewBox="-2 -2 40 48" className="absolute inset-0" overflow="visible">
                             {/* White contrast outline */}
-                            <path d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="3.5" />
+                            <path d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="3.5" />
                             {/* Main body */}
                             <path d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill={T.color} stroke="#1a0e08" strokeWidth="1.5" />
+                            {/* Hover shimmer highlight */}
+                            <path className="group-hover:opacity-100" d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill="none" stroke={T.glow} strokeWidth="1" strokeOpacity="0" style={{ transition: "stroke-opacity 0.3s" }} />
                             {/* Inner circle */}
                             <circle cx="18" cy="16" r="10" fill="white" />
                           </svg>
-                          <div className="relative" style={{ marginTop: -8, color: T.color }}><Ico size={15} strokeWidth={2.5} /></div>
+                          <div className="relative" style={{ marginTop: -8, color: T.color, transition: "transform 0.2s" }}><Ico size={15} strokeWidth={2.5} /></div>
                         </div>
-                        {/* Enhanced tooltip */}
-                        <div className="absolute left-1/2 -translate-x-1/2 -top-14 opacity-0 group-hover:opacity-100 pointer-events-none"
-                             style={{ transition: "opacity 0.15s" }}>
-                          <div className="px-2.5 py-1.5 rounded-sm whitespace-nowrap"
-                               style={{ backgroundColor: "rgba(24, 14, 8, 0.96)", border: `1px solid ${T.color}99`, boxShadow: `0 0 14px ${T.glow}55` }}>
-                            <div style={{ fontFamily: "'IM Fell English', serif", fontSize: 13, color: "#f4e8d0", fontWeight: 600 }}>{p.title}</div>
-                            <div style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 10, color: T.glow, textTransform: "uppercase", letterSpacing: "0.06em" }}>{T.label}</div>
+                        {/* Magical tooltip */}
+                        <div className="absolute left-1/2 -translate-x-1/2 -top-16 opacity-0 group-hover:opacity-100 pointer-events-none"
+                             style={{ transition: "opacity 0.2s, transform 0.2s", transform: "translateY(4px)", ["--tw-translate-y"]: "0px" }}>
+                          <div className="px-3 py-2 rounded-sm whitespace-nowrap relative overflow-hidden"
+                               style={{ backgroundColor: "rgba(18, 10, 4, 0.97)", border: `1px solid ${T.color}88`, boxShadow: `0 0 18px ${T.glow}44, 0 4px 12px rgba(0,0,0,0.5)` }}>
+                            <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${T.glow}12 0%, transparent 60%)`, pointerEvents: "none" }} />
+                            <div style={{ fontFamily: "'IM Fell English', serif", fontSize: 13, color: "#f4e8d0", fontWeight: 600, position: "relative" }}>{p.title}</div>
+                            <div style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 10, color: T.glow, textTransform: "uppercase", letterSpacing: "0.08em", position: "relative" }}>{T.label}</div>
                           </div>
-                          <div style={{ width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `6px solid ${T.color}99`, margin: "0 auto" }} />
+                          <div style={{ width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `6px solid ${T.color}88`, margin: "0 auto" }} />
                         </div>
                       </button>
                     );
@@ -1158,6 +1246,8 @@ const inputStyle = () => ({
 });
 
 function PinEditor({ item, onUpdate }) {
+  const customColor = item.customColor || "#7a5c3a";
+  const customIconKey = item.customIconKey || "star";
   return (
     <>
       <div><FieldLabel>Title</FieldLabel><input value={item.title} onChange={(e) => onUpdate({ title: e.target.value })} style={inputStyle()} placeholder="What lies here?" /></div>
@@ -1174,8 +1264,54 @@ function PinEditor({ item, onUpdate }) {
               </button>
             );
           })}
+          {/* Custom type tile */}
+          <button onClick={() => onUpdate({ type: "custom", customLabel: item.customLabel || "Custom", customColor: customColor, customIconKey: customIconKey })}
+                  className="flex flex-col items-center gap-1 py-2 rounded"
+                  style={{ backgroundColor: item.type === "custom" ? customColor : "rgba(255, 250, 235, 0.6)", color: item.type === "custom" ? "#f4e8d0" : "#5c4030", border: `1px solid ${item.type === "custom" ? customColor : "#8b6f4755"}`, gridColumn: "span 1" }}>
+            <Plus size={16} /><span className="text-[10px] uppercase tracking-wider">Custom</span>
+          </button>
         </div>
       </div>
+
+      {/* Custom pin definition fields */}
+      {item.type === "custom" && (
+        <div className="space-y-3 p-3 rounded" style={{ backgroundColor: "rgba(255,250,235,0.5)", border: "1px solid #8b6f47" }}>
+          <div>
+            <FieldLabel>Custom Label</FieldLabel>
+            <input value={item.customLabel || ""} onChange={(e) => onUpdate({ customLabel: e.target.value })} style={inputStyle()} placeholder="e.g. Volcano, Temple, Ruin…" />
+          </div>
+          <div>
+            <FieldLabel>Colour</FieldLabel>
+            <div className="flex items-center gap-3">
+              <input type="color" value={customColor} onChange={(e) => onUpdate({ customColor: e.target.value })}
+                     style={{ width: 36, height: 30, border: "1px solid #8b6f47", borderRadius: 2, cursor: "pointer", padding: 1, backgroundColor: "transparent" }} />
+              <div className="flex gap-1.5 flex-wrap">
+                {["#8b1a1a","#8b4513","#7a5c1a","#1a5c2a","#1a3a6b","#5c1a6b","#4a1a4a","#3a3a3a"].map(c => (
+                  <button key={c} onClick={() => onUpdate({ customColor: c })}
+                          style={{ width: 20, height: 20, backgroundColor: c, borderRadius: "50%", border: customColor === c ? "2px solid #2a1810" : "2px solid transparent", outline: customColor === c ? "2px solid " + c : "none" }} />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <FieldLabel>Icon</FieldLabel>
+            <div className="grid grid-cols-8 gap-1">
+              {Object.entries(CUSTOM_ICONS).map(([key, Ico]) => {
+                const active = customIconKey === key;
+                return (
+                  <button key={key} onClick={() => onUpdate({ customIconKey: key })}
+                          className="flex items-center justify-center rounded p-1.5"
+                          style={{ backgroundColor: active ? customColor : "rgba(255,250,235,0.6)", color: active ? "#f4e8d0" : "#5c4030", border: `1px solid ${active ? customColor : "#8b6f4755"}` }}
+                          title={key}>
+                    <Ico size={14} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div><FieldLabel>Notes</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder="The whispers say…" /></div>
     </>
   );
