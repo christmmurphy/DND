@@ -488,6 +488,7 @@ function MapCanvas({ mapId, mapName }) {
   const [hoveredZoneId, setHoveredZoneId] = useState(null);
   const [showReplaceLabel, setShowReplaceLabel] = useState(false);
   const replaceLabelTimer = useRef(null);
+  const navRef = useRef({});
   const [liveEditPin, setLiveEditPin] = useState(null);
   const [liveEditZone, setLiveEditZone] = useState(null);
 
@@ -510,6 +511,27 @@ function MapCanvas({ mapId, mapName }) {
     replaceLabelTimer.current = setTimeout(() => setShowReplaceLabel(false), 3000);
     return () => clearTimeout(replaceLabelTimer.current);
   }, [map]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      e.preventDefault();
+      const { vPins, vZones, selId, focusFn, setSelId, setEditFn } = navRef.current;
+      const allItems = [
+        ...vZones.map(z => ({ kind: "zone", id: z.id, x: z.type === "path" ? z.points[Math.floor(z.points.length / 2)].x : z.x, y: z.type === "path" ? z.points[Math.floor(z.points.length / 2)].y : z.y })),
+        ...vPins.map(p => ({ kind: "pin", id: p.id, x: p.x, y: p.y })),
+      ];
+      if (allItems.length === 0) return;
+      const cur = allItems.findIndex(i => i.id === selId);
+      const next = allItems[e.key === "ArrowDown" ? (cur + 1) % allItems.length : (cur - 1 + allItems.length) % allItems.length];
+      setSelId(next.id);
+      setEditFn({ kind: next.kind, id: next.id });
+      focusFn(next.x, next.y);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
@@ -878,6 +900,7 @@ function MapCanvas({ mapId, mapName }) {
 
   const visiblePins = pins.filter(p => !hiddenTypes.has(p.type === "custom" ? "custom" : p.type));
   const visibleZones = zones.filter(z => !hiddenZoneKinds.has(z.zoneKind || "environmental"));
+  navRef.current = { vPins: visiblePins, vZones: visibleZones, selId: selectedId, focusFn: focusOnItem, setSelId: setSelectedId, setEditFn: setEditingItem };
   const CLUSTER_THRESHOLD = mode === "view" ? 0.08 / Math.max(1, zoom) : 0;
   const clusterAssigned = new Set();
   const pinClusters = [];
@@ -1639,6 +1662,7 @@ function PinEditor({ item, onUpdate, onVisualChange }) {
 function ZoneEditor({ item, onUpdate, onVisualChange }) {
   const isFaction = item.zoneKind === "faction";
   const factionColor = item.factionColor || "#6b1a8b";
+  const [colorOpen, setColorOpen] = useState(false);
   const visual = (patch) => { onUpdate(patch); onVisualChange?.(patch); };
   return (
     <>
@@ -1674,17 +1698,24 @@ function ZoneEditor({ item, onUpdate, onVisualChange }) {
           </div>
           <div>
             <FieldLabel>Faction Colour</FieldLabel>
-            <div className="grid gap-1.5 mb-2" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
-              {FACTION_COLORS.map(c => (
-                <button key={c} onClick={() => visual({ factionColor: c })}
-                        style={{ width: "100%", aspectRatio: "1", backgroundColor: c, borderRadius: 3, border: factionColor === c ? "2px solid #f4e8d0" : "2px solid transparent", boxShadow: factionColor === c ? `0 0 0 2px ${c}` : "none" }} />
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mb-1">
+              <div style={{ width: 22, height: 22, backgroundColor: factionColor, borderRadius: 3, border: "1px solid rgba(0,0,0,0.2)", flexShrink: 0 }} />
+              <button onClick={() => setColorOpen(o => !o)}
+                      className="text-xs uppercase tracking-wider px-2 py-1 rounded"
+                      style={{ fontFamily: "'IM Fell English SC', serif", border: "1px solid #8b6f47", backgroundColor: "rgba(255,250,235,0.7)", color: "#5c4030", letterSpacing: "0.06em" }}>
+                {colorOpen ? "Close" : "Change"}
+              </button>
               <input type="color" value={factionColor} onChange={(e) => visual({ factionColor: e.target.value })}
-                     style={{ width: 36, height: 30, border: "1px solid #8b6f47", borderRadius: 2, cursor: "pointer", padding: 1, backgroundColor: "transparent" }} />
-              <span style={{ fontFamily: "'IM Fell English', serif", fontSize: 12, color: "#5c4030", fontStyle: "italic" }}>Custom colour</span>
+                     style={{ width: 28, height: 24, border: "1px solid #8b6f47", borderRadius: 2, cursor: "pointer", padding: 1, backgroundColor: "transparent" }} />
             </div>
+            {colorOpen && (
+              <div className="grid gap-1.5 mt-1" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+                {FACTION_COLORS.map(c => (
+                  <button key={c} onClick={() => { visual({ factionColor: c }); setColorOpen(false); }}
+                          style={{ width: "100%", aspectRatio: "1", backgroundColor: c, borderRadius: 3, border: factionColor === c ? "2px solid #f4e8d0" : "2px solid transparent", boxShadow: factionColor === c ? `0 0 0 2px ${c}` : "none" }} />
+                ))}
+              </div>
+            )}
           </div>
         </>
       ) : (
