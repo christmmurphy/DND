@@ -492,6 +492,7 @@ function MapCanvas({ mapId, mapName }) {
   const [hoveredZoneId, setHoveredZoneId] = useState(null);
   const [showReplaceLabel, setShowReplaceLabel] = useState(false);
   const replaceLabelTimer = useRef(null);
+  const [liveEditPin, setLiveEditPin] = useState(null);
 
   const addToast = useCallback((message, type = "success") => {
     const id = Date.now() + Math.random();
@@ -1301,7 +1302,8 @@ function MapCanvas({ mapId, mapName }) {
 
                   {/* Pins */}
                   {visiblePins.filter(p => !clusteredPinIds.has(p.id)).map(p => {
-                    const T = getPinType(p);
+                    const display = (liveEditPin?.id === p.id) ? { ...p, ...liveEditPin } : p;
+                    const T = getPinType(display);
                     const Ico = T.icon;
                     const sel = selectedId === p.id;
                     const isMoving = movingPin === p.id;
@@ -1346,7 +1348,7 @@ function MapCanvas({ mapId, mapName }) {
                               className={`absolute group pin-marker${sel ? " pin-selected" : ""}${isMoving ? " pin-moving" : ""}`}
                               style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: pinCursor, zIndex: sel || isMoving ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
                         {/* Pulse rings — paused until hover/selected via .pin-pulse CSS */}
-                        {(p.pulse || p.type === "danger") && <>
+                        {display.pulse && <>
                           <div className="pin-pulse" style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out infinite", pointerEvents: "none" }} />
                           <div className="pin-pulse" style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out 1s infinite", pointerEvents: "none" }} />
                         </>}
@@ -1388,11 +1390,12 @@ function MapCanvas({ mapId, mapName }) {
 
       {editingObj && (
         <EditPanel item={editingObj} kind={editingItem.kind}
-                   onClose={() => { setEditingItem(null); setSelectedId(null); }}
+                   onVisualChange={(patch) => setLiveEditPin(prev => ({ ...(prev?.id === editingObj.id ? prev : { id: editingObj.id }), ...patch }))}
+                   onClose={() => { setEditingItem(null); setSelectedId(null); setLiveEditPin(null); }}
                    onSave={(draft) => {
                      if (editingItem.kind === "pin") updatePin(editingObj.id, draft);
                      else updateZone(editingObj.id, draft);
-                     setEditingItem(null); setSelectedId(null);
+                     setEditingItem(null); setSelectedId(null); setLiveEditPin(null);
                      addToast("Changes saved.");
                    }}
                    onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)}
@@ -1477,7 +1480,7 @@ function UploadGate({ onPickFile, onDropFile, error }) {
   );
 }
 
-function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
+function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove, onVisualChange }) {
   const [draft, setDraft] = useState({ ...item });
   // Sync draft when the user switches to a different item — no flash because
   // calling setState during render causes React to re-render synchronously.
@@ -1522,7 +1525,7 @@ function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
       {/* key forces this subtree to remount (and re-animate) when the selected item changes */}
       <div key={item.id}>
         <div className="px-5 py-4 space-y-4">
-          {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} /> : <ZoneEditor item={draft} onUpdate={updateDraft} />}
+          {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} onVisualChange={onVisualChange} /> : <ZoneEditor item={draft} onUpdate={updateDraft} />}
         </div>
       </div>
     </div>
@@ -1539,10 +1542,11 @@ const inputStyle = () => ({
   fontFamily: "'EB Garamond', serif", fontSize: 15, color: "#2a1810", outline: "none",
 });
 
-function PinEditor({ item, onUpdate }) {
+function PinEditor({ item, onUpdate, onVisualChange }) {
   const [customExpanded, setCustomExpanded] = useState(!item.customLabel);
   const customColor = item.customColor || "#7a5c3a";
   const customIconKey = item.customIconKey || "star";
+  const visual = (patch) => { onUpdate(patch); onVisualChange?.(patch); };
   return (
     <>
       <div><FieldLabel>Title</FieldLabel><input value={item.title} onChange={(e) => onUpdate({ title: e.target.value })} style={inputStyle()} placeholder="What lies here?" /></div>
@@ -1552,7 +1556,7 @@ function PinEditor({ item, onUpdate }) {
           {Object.entries(PIN_TYPES).map(([key, t]) => {
             const Icon = t.icon; const active = item.type === key;
             return (
-              <button key={key} onClick={() => onUpdate({ type: key })}
+              <button key={key} onClick={() => visual({ type: key })}
                       className="flex flex-col items-center gap-1 py-2 rounded"
                       style={{ backgroundColor: active ? t.color : "rgba(255, 250, 235, 0.6)", color: active ? "#f4e8d0" : t.color, border: `1px solid ${active ? t.color : t.color + "55"}` }}>
                 <Icon size={16} /><span className="text-[10px] uppercase tracking-wider">{t.label}</span>
@@ -1560,7 +1564,7 @@ function PinEditor({ item, onUpdate }) {
             );
           })}
           {/* Custom type tile */}
-          <button onClick={() => onUpdate({ type: "custom", customLabel: item.customLabel || "Custom", customColor: customColor, customIconKey: customIconKey })}
+          <button onClick={() => visual({ type: "custom", customLabel: item.customLabel || "Custom", customColor: customColor, customIconKey: customIconKey })}
                   className="flex flex-col items-center gap-1 py-2 rounded"
                   style={{ backgroundColor: item.type === "custom" ? customColor : "rgba(255, 250, 235, 0.6)", color: item.type === "custom" ? "#f4e8d0" : "#5c4030", border: `1px solid ${item.type === "custom" ? customColor : "#8b6f4755"}`, gridColumn: "span 1" }}>
             <Plus size={16} /><span className="text-[10px] uppercase tracking-wider">Custom</span>
@@ -1585,11 +1589,11 @@ function PinEditor({ item, onUpdate }) {
           <div>
             <FieldLabel>Colour</FieldLabel>
             <div className="flex items-center gap-3">
-              <input type="color" value={customColor} onChange={(e) => onUpdate({ customColor: e.target.value })}
+              <input type="color" value={customColor} onChange={(e) => visual({ customColor: e.target.value })}
                      style={{ width: 36, height: 30, border: "1px solid #8b6f47", borderRadius: 2, cursor: "pointer", padding: 1, backgroundColor: "transparent" }} />
               <div className="flex gap-1.5 flex-wrap">
                 {["#8b1a1a","#8b4513","#7a5c1a","#1a5c2a","#1a3a6b","#5c1a6b","#4a1a4a","#3a3a3a"].map(c => (
-                  <button key={c} onClick={() => onUpdate({ customColor: c })}
+                  <button key={c} onClick={() => visual({ customColor: c })}
                           style={{ width: 20, height: 20, backgroundColor: c, borderRadius: "50%", border: customColor === c ? "2px solid #2a1810" : "2px solid transparent", outline: customColor === c ? "2px solid " + c : "none" }} />
                 ))}
               </div>
@@ -1601,7 +1605,7 @@ function PinEditor({ item, onUpdate }) {
               {Object.entries(CUSTOM_ICONS).map(([key, Ico]) => {
                 const active = customIconKey === key;
                 return (
-                  <button key={key} onClick={() => onUpdate({ customIconKey: key })}
+                  <button key={key} onClick={() => visual({ customIconKey: key })}
                           className="flex items-center justify-center rounded p-1.5"
                           style={{ backgroundColor: active ? customColor : "rgba(255,250,235,0.6)", color: active ? "#f4e8d0" : "#5c4030", border: `1px solid ${active ? customColor : "#8b6f4755"}` }}
                           title={key}>
@@ -1615,13 +1619,15 @@ function PinEditor({ item, onUpdate }) {
         </div>
       )}
 
-      <div>
-        <label className="flex items-center gap-2.5 cursor-pointer select-none" style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 12, color: "#5c4030", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-          <input type="checkbox" checked={!!item.pulse} onChange={(e) => onUpdate({ pulse: e.target.checked })}
-                 style={{ width: 15, height: 15, accentColor: "#8b1a1a", cursor: "pointer" }} />
-          Pulse on hover
-        </label>
-      </div>
+      {item.type === "danger" && (
+        <div>
+          <label className="flex items-center gap-2.5 cursor-pointer select-none" style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 12, color: "#5c4030", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            <input type="checkbox" checked={!!item.pulse} onChange={(e) => visual({ pulse: e.target.checked })}
+                   style={{ width: 15, height: 15, accentColor: "#cc2020", cursor: "pointer" }} />
+            Pulse on hover
+          </label>
+        </div>
+      )}
       <div><FieldLabel>Notes</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder="The whispers say…" /></div>
     </>
   );
