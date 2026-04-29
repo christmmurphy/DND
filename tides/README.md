@@ -1,6 +1,6 @@
-# Menagerie Coast — Campaign Chart
+# Campaign Charts
 
-A self-hosted, shared map for your D&D group. Pin quests, mark danger zones, sync across the table.
+A self-hosted, shared map tool for your D&D group. Run multiple maps across different campaigns, pin quests, mark danger zones, take snapshots, and sync across the table in real time.
 
 ## Files in this folder
 
@@ -8,10 +8,34 @@ A self-hosted, shared map for your D&D group. Pin quests, mark danger zones, syn
 - `api.php` — backend; reads/writes the data folder
 - `README.md` — this file
 
-A `data/` folder will be created automatically by `api.php` on first request. It stores:
-- `meta.json` — pins and zones
-- `map.bin` + `map.type` — the uploaded map image
-- `.htaccess`, `index.html`, `index.php` — auto-written guards against the folder being browsed
+A `data/` folder is created automatically on first request. Each map gets its own subfolder:
+```
+data/
+  maps.json              ← list of maps
+  {map-slug}/
+    meta.json            ← pins and zones for this map
+    map.bin + map.type   ← uploaded map image
+    snapshots.json       ← snapshot index
+    snapshots/{id}/      ← saved snapshots (meta + image)
+```
+
+## Run locally on Mac
+
+You need PHP (ships with macOS, or install via Homebrew) and a browser.
+
+```bash
+# 1. Clone or download the repo, then cd into the tides folder
+cd path/to/DND/tides
+
+# 2. Start PHP's built-in server
+php -S localhost:8080
+
+# 3. Open http://localhost:8080 in your browser
+```
+
+That's it — no build step, no Node, no dependencies to install. The `data/` folder is created next to `api.php` on first load.
+
+> **Note:** PHP's built-in server is single-threaded. It's fine for local solo use but not suitable for serving multiple players simultaneously. Use the Synology install for shared sessions.
 
 ## Install on Synology Web Station
 
