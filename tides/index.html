@@ -1137,7 +1137,7 @@ function MapCanvas({ mapId, mapName }) {
                            onPointerDown={(e) => {
                              if (mode === "view" || mode === "movepin") {
                                e.stopPropagation();
-                               if (!sel) { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); return; }
+                               if (!sel) { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); focusOnItem(z.x, z.y); return; }
                                try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
                                const { x, y } = eventToMapCoords(e);
                                pushToHistory();
@@ -1188,7 +1188,7 @@ function MapCanvas({ mapId, mapName }) {
                       const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
                       return (
                         <g key={z.id} className={`zone-path pointer-events-auto${highlighted ? " zone-selected" : ""}`} style={{ cursor: "pointer", color: D.stroke }}
-                           onPointerDown={(e) => { if (mode === "view" || mode === "movepin") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
+                           onPointerDown={(e) => { if (mode === "view" || mode === "movepin") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); const mid = z.points[Math.floor(z.points.length / 2)]; focusOnItem(mid.x, mid.y); } }}>
                           <polyline points={pts} fill="none" stroke="transparent" strokeWidth="0.04" strokeLinecap="round" />
                           <polyline points={pts} fill="none" stroke={D.stroke}
                                     strokeOpacity={sel ? 0.65 : 0.35} strokeWidth="0.022"
@@ -1301,7 +1301,7 @@ function MapCanvas({ mapId, mapName }) {
                                   try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
                                   dragStartRef.current = { id: p.id, x: e.clientX, y: e.clientY };
                                 } else if (mode === "view") {
-                                  e.stopPropagation(); setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id });
+                                  e.stopPropagation(); setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); focusOnItem(p.x, p.y);
                                 }
                               }}
                               onPointerMove={(e) => {
