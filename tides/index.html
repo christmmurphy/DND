@@ -169,9 +169,12 @@ function App() {
           const created = await apiNewMap("Menagerie Coast");
           setMaps([{ id: created.id, name: created.name }]);
           setActiveMapId(created.id);
+          sessionStorage.setItem('lastMapId', created.id);
         } else {
           setMaps(list);
-          setActiveMapId(list[0].id);
+          const stored = sessionStorage.getItem('lastMapId');
+          const initial = (stored && list.some(m => m.id === stored)) ? stored : list[0].id;
+          setActiveMapId(initial);
         }
       } catch (e) {
         setGlobalError("Could not reach the server: " + e.message);
@@ -237,7 +240,7 @@ function App() {
       <MapTabBar
         maps={maps}
         activeMapId={activeMapId}
-        onSelect={setActiveMapId}
+        onSelect={(id) => { sessionStorage.setItem('lastMapId', id); setActiveMapId(id); }}
         onNew={handleNewMap}
         onRename={handleRenameMap}
         onDelete={handleDeleteMap}
@@ -356,8 +359,9 @@ function MapCanvas({ mapId, mapName }) {
   const [snapshots, setSnapshots]   = useState([]);
   const [snapshotStatus, setSnapshotStatus] = useState("idle");
 
-  const wrapRef    = useRef(null);
-  const mapRef     = useRef(null);
+  const wrapRef           = useRef(null);
+  const mapRef            = useRef(null);
+  const imgContainerRef   = useRef(null);
   const fileInputRef = useRef(null);
   const pointersRef  = useRef(new Map());
   const gestureRef   = useRef(null);
@@ -519,8 +523,11 @@ function MapCanvas({ mapId, mapName }) {
   };
 
   // Coords
+  // Use the inner image container (not the outer transformed div) so coords
+  // are always relative to the actual image, regardless of zoom/pan.
   const eventToMapCoords = (e) => {
-    const rect = mapRef.current.getBoundingClientRect();
+    const el = imgContainerRef.current || mapRef.current;
+    const rect = el.getBoundingClientRect();
     return {
       x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
       y: Math.max(0, Math.min(1, (e.clientY - rect.top)  / rect.height)),
@@ -791,7 +798,7 @@ function MapCanvas({ mapId, mapName }) {
               <div ref={mapRef}
                    className="relative origin-center select-none"
                    style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", transition: panning || drawing ? "none" : "transform 0.15s ease-out" }}>
-                <div className="relative" style={{ maxWidth: "100%", maxHeight: "100%" }}>
+                <div ref={imgContainerRef} className="relative" style={{ maxWidth: "100%", maxHeight: "100%" }}>
                   <img src={map} alt="Campaign map" draggable={false}
                        className="block max-w-full max-h-[100vh] pointer-events-none"
                        style={{ filter: "sepia(0.08) contrast(1.02)", boxShadow: "0 8px 40px rgba(42, 24, 16, 0.4)" }}
