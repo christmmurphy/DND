@@ -1633,6 +1633,21 @@ function ZoneEditor({ item, onUpdate }) {
   return (
     <>
       <div>
+        <FieldLabel>Zone Type</FieldLabel>
+        <div className="flex rounded overflow-hidden" style={{ border: "1px solid #8b6f47" }}>
+          {[["environmental", "Environmental"], ["faction", "Faction"]].map(([val, label]) => {
+            const active = (item.zoneKind || "environmental") === val;
+            return (
+              <button key={val} onClick={() => onUpdate({ zoneKind: val, dangerLevel: val === "environmental" ? (item.dangerLevel || "medium") : undefined, factionName: val === "faction" ? (item.factionName || "") : undefined, factionColor: val === "faction" ? (item.factionColor || "#6b1a8b") : undefined })}
+                      className="flex-1 py-1.5 text-xs uppercase tracking-wider"
+                      style={{ fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em", backgroundColor: active ? "#5c4030" : "rgba(255,250,235,0.6)", color: active ? "#f4e8d0" : "#5c4030", borderRight: val === "environmental" ? "1px solid #8b6f47" : "none" }}>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
         <FieldLabel>{item.type === "path" ? (isFaction ? "Territory Route" : "Coastline Name") : (isFaction ? "Territory Name" : "Zone Name")}</FieldLabel>
         <input value={item.name} onChange={(e) => onUpdate({ name: e.target.value })} style={inputStyle()} placeholder="What is this region called?" />
       </div>
