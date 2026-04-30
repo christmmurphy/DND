@@ -286,6 +286,13 @@ function App() {
   const [viewMode, setViewMode]       = useState(getViewParam);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    if (viewMode === "player") { url.searchParams.set("view", "player"); }
+    else { url.searchParams.delete("view"); }
+    window.history.replaceState(null, "", url.toString());
+  }, [viewMode]);
+
+  useEffect(() => {
     (async () => {
       try {
         const { maps: list } = await apiListMaps();
@@ -512,6 +519,10 @@ function MapCanvas({ mapId, mapName, viewMode, onToggleView }) {
   const [hoveredZoneId, setHoveredZoneId] = useState(null);
   const [showReplaceLabel, setShowReplaceLabel] = useState(false);
   const replaceLabelTimer = useRef(null);
+  const [showFiltersLabel, setShowFiltersLabel] = useState(false);
+  const filtersLabelTimer = useRef(null);
+  const modeRef = useRef(mode);
+  const preSpaceMode = useRef(null);
   const navRef = useRef({});
   const [liveEditPin, setLiveEditPin] = useState(null);
   const [liveEditZone, setLiveEditZone] = useState(null);
@@ -530,12 +541,17 @@ function MapCanvas({ mapId, mapName, viewMode, onToggleView }) {
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
   useEffect(() => {
     if (!map) return;
     setShowReplaceLabel(true);
     clearTimeout(replaceLabelTimer.current);
     replaceLabelTimer.current = setTimeout(() => setShowReplaceLabel(false), 3000);
-    return () => clearTimeout(replaceLabelTimer.current);
+    setShowFiltersLabel(true);
+    clearTimeout(filtersLabelTimer.current);
+    filtersLabelTimer.current = setTimeout(() => setShowFiltersLabel(false), 3000);
+    return () => { clearTimeout(replaceLabelTimer.current); clearTimeout(filtersLabelTimer.current); };
   }, [map]);
 
   useEffect(() => {
@@ -557,6 +573,25 @@ function MapCanvas({ mapId, mapName, viewMode, onToggleView }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  useEffect(() => {
+    const down = (e) => {
+      if (e.code !== "Space" || e.repeat) return;
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      if (preSpaceMode.current !== null) return;
+      e.preventDefault();
+      preSpaceMode.current = modeRef.current;
+      setMode("pan");
+    };
+    const up = (e) => {
+      if (e.code !== "Space" || preSpaceMode.current === null) return;
+      setMode(preSpaceMode.current);
+      preSpaceMode.current = null;
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
   }, []);
 
   const toggleFullscreen = useCallback(() => {
@@ -1153,28 +1188,32 @@ function MapCanvas({ mapId, mapName, viewMode, onToggleView }) {
                 : <div className="splash flex-col gap-3"><Compass size={48} style={{ color: "#5c4030" }} /><span style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 16, color: "#5c4030" }}>The DM has not yet prepared this chart.</span></div>
         ) : (
           <>
-            {/* Toolbar */}
+            {/* Toolbar — placement + zoom tools */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2 py-1.5 rounded-lg shadow-lg"
                  style={{ background: "linear-gradient(160deg, #1e0c04 0%, #2e1508 100%)", border: "1.5px solid #c5922a", fontFamily: "'IM Fell English SC', serif", boxShadow: "0 0 0 1px rgba(197,146,42,0.2), 0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,220,100,0.1)" }}>
-              <ToolbarBtn active={mode === "view"}  onClick={() => setMode("view")}  icon={Eye}        label="Read" />
-              <ToolbarBtn active={mode === "pan"}   onClick={() => setMode("pan")}   icon={Move}       label="Pan" />
-              <ToolbarBtn active={scrollMode}       onClick={() => setScrollMode(s => !s)} icon={MouseIcon} label="Scroll" title={scrollMode ? "Scroll mode ON — mouse wheel scrolls page" : "Scroll mode OFF — mouse wheel zooms map"} />
               {isDM && <>
-                <Sep />
                 <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}    label="Pin" />
                 <ToolbarBtn active={mode === "city"}  onClick={() => setMode("city")}  icon={Landmark}  label="City" />
-                <ToolbarBtn active={mode === "zone"} onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
-                <ToolbarBtn active={mode === "brush"}  onClick={() => { setZonePickerFor("brush"); }}  icon={Brush}     label="Brush" />
+                <ToolbarBtn active={mode === "zone"}  onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Zone" />
+                <ToolbarBtn active={mode === "brush"} onClick={() => { setZonePickerFor("brush"); }}  icon={Brush}     label="Brush" />
                 <Sep />
                 <ToolbarBtn disabled={undoStack.length === 0} onClick={undo} icon={Undo2} label="Undo" title={`Undo (${undoStack.length})`} />
                 <ToolbarBtn disabled={redoStack.length === 0} onClick={redo} icon={Redo2} label="Redo" />
+                <Sep />
               </>}
-              <Sep />
               <ToolbarBtn onClick={() => setZoom(z => Math.min(6, z * 1.25))} icon={ZoomIn}  label="" title="Zoom in" />
               <ToolbarBtn onClick={() => setZoom(z => Math.max(0.5, z / 1.25))} icon={ZoomOut} label="" title="Zoom out" />
               <ToolbarBtn onClick={resetView} icon={FitView} label="" title="Fit to view" />
               <Sep />
               <ToolbarBtn onClick={toggleFullscreen} icon={isFullscreen ? Minimize2 : Maximize2} label="" title={isFullscreen ? "Exit fullscreen" : "Fullscreen"} />
+            </div>
+
+            {/* Nav bar — floats at bottom centre */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2 py-1.5 rounded-lg shadow-lg"
+                 style={{ background: "linear-gradient(160deg, #1e0c04 0%, #2e1508 100%)", border: "1.5px solid #c5922a", fontFamily: "'IM Fell English SC', serif", boxShadow: "0 0 0 1px rgba(197,146,42,0.2), 0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,220,100,0.1)" }}>
+              <ToolbarBtn active={mode === "view"} onClick={() => setMode("view")} icon={Eye}       label="Read" title="Read mode" />
+              <ToolbarBtn active={mode === "pan"}  onClick={() => setMode("pan")}  icon={Move}      label="Pan"  title="Pan mode (or hold Space)" />
+              <ToolbarBtn active={scrollMode}      onClick={() => setScrollMode(s => !s)} icon={MouseIcon} label="Scroll" title={scrollMode ? "Scroll mode ON — mouse wheel scrolls page" : "Scroll mode OFF — mouse wheel zooms map"} />
             </div>
 
             {/* Zone kind picker */}
@@ -1545,7 +1584,7 @@ function MapCanvas({ mapId, mapName, viewMode, onToggleView }) {
             </div>
 
             <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-3">
-              <FilterPanel hiddenTypes={hiddenTypes} hiddenZoneKinds={hiddenZoneKinds} hiddenCitySizes={hiddenCitySizes} onToggleType={togglePinType} onToggleZoneKind={toggleZoneKind} onToggleCitySize={toggleCitySize} />
+              <FilterPanel hiddenTypes={hiddenTypes} hiddenZoneKinds={hiddenZoneKinds} hiddenCitySizes={hiddenCitySizes} onToggleType={togglePinType} onToggleZoneKind={toggleZoneKind} onToggleCitySize={toggleCitySize} showLabel={showFiltersLabel} />
               <div className="pointer-events-none opacity-50"><CompassRose size={70} /></div>
             </div>
           </>
@@ -1578,7 +1617,7 @@ function MapCanvas({ mapId, mapName, viewMode, onToggleView }) {
       <ToastContainer toasts={toasts} />
 
       {storageError && map && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 px-3 py-2 rounded text-sm flex items-center gap-2"
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-40 px-3 py-2 rounded text-sm flex items-center gap-2"
              style={{ backgroundColor: "rgba(139, 26, 26, 0.95)", color: "#f4e8d0", border: "1px solid #5c0808" }}>
           <AlertTriangle size={16} /><span>{storageError}</span>
           <button onClick={() => setStorageError(null)} className="ml-2 opacity-80 hover:opacity-100"><X size={14} /></button>
@@ -2025,7 +2064,7 @@ function ToastContainer({ toasts }) {
   );
 }
 
-function FilterPanel({ hiddenTypes, hiddenZoneKinds, hiddenCitySizes, onToggleType, onToggleZoneKind, onToggleCitySize }) {
+function FilterPanel({ hiddenTypes, hiddenZoneKinds, hiddenCitySizes, onToggleType, onToggleZoneKind, onToggleCitySize, showLabel }) {
   const [open, setOpen] = useState(false);
   const [pinsOpen, setPinsOpen] = useState(false);
   const [zonesOpen, setZonesOpen] = useState(false);
@@ -2060,7 +2099,7 @@ function FilterPanel({ hiddenTypes, hiddenZoneKinds, hiddenCitySizes, onToggleTy
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
               style={{ backgroundColor: "rgba(42,24,16,0.93)", color: "#f4e8d0", border: `1px solid ${activeCount > 0 ? "#c4641e" : "#8b6f47"}`, fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em" }}>
         <Eye size={13} />
-        <span>Filters</span>
+        {showLabel && <span style={{ whiteSpace: "nowrap" }}>Filters</span>}
         {activeCount > 0 && (
           <span style={{ backgroundColor: "#c4641e", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontFamily: "sans-serif", flexShrink: 0 }}>{activeCount}</span>
         )}
