@@ -1,0 +1,1693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2a1810">
+  <title>Campaign Charts</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+  <style>
+    html, body, #root { margin: 0; padding: 0; width: 100%; }
+    html, body { height: 100%; overflow: hidden; }
+    #root { height: 100vh; height: 100dvh; }
+    body { background: #c9a875; -webkit-tap-highlight-color: transparent; }
+    @keyframes pinDrop {
+      0%   { transform: translate(-50%, -200%) scale(0.5); opacity: 0; }
+      70%  { transform: translate(-50%, -90%) scale(1.1); opacity: 1; }
+      100% { transform: translate(-50%, -100%) scale(1); }
+    }
+    @keyframes dangerRing {
+      0%   { transform: scale(1);   opacity: 0.7; }
+      100% { transform: scale(3);   opacity: 0; }
+    }
+    @keyframes slideInPanel {
+      from { transform: translateX(100%); }
+      to   { transform: translateX(0); }
+    }
+    @keyframes toastPop {
+      0%   { transform: translateY(12px); opacity: 0; }
+      100% { transform: translateY(0);    opacity: 1; }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes magicShimmer {
+      0%   { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: -0.2; }
+    }
+    .zone-circle { opacity: 0.52; transition: opacity 0.3s ease; }
+    .zone-circle:hover, .zone-circle.zone-selected { opacity: 1; }
+    .zone-circle:hover circle { stroke-opacity: 0.95 !important; filter: drop-shadow(0 0 6px currentColor); }
+    .zone-path { opacity: 0.52; transition: opacity 0.3s ease; }
+    .zone-path:hover, .zone-path.zone-selected { opacity: 1; }
+    .zone-path:hover polyline  { stroke-opacity: 0.75 !important; }
+    .pin-marker { opacity: 0.62; transition: opacity 0.25s ease; }
+    .pin-marker:hover, .pin-marker.pin-selected, .pin-marker.pin-moving { opacity: 1; }
+    .pin-marker .pin-hover-tip { display: none; }
+    .pin-marker:hover .pin-hover-tip { display: block; }
+    .pin-tooltip-enter { opacity: 0; transform: translateY(6px); }
+    .pin-tooltip-enter-active { opacity: 1; transform: translateY(0); transition: opacity 0.2s, transform 0.2s; }
+    .splash {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-family: 'IM Fell English', serif; font-style: italic; color: #5c4030;
+      background: #d8c094;
+    }
+    .tab-scroll::-webkit-scrollbar { height: 4px; }
+    .tab-scroll::-webkit-scrollbar-track { background: transparent; }
+    .tab-scroll::-webkit-scrollbar-thumb { background: #8b6f47; border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <script>if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; window.scrollTo(0, 0);</script>
+  <div id="root"><div class="splash">Unfurling the chart…</div></div>
+
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ============================================================
+//  URL hash helpers
+// ============================================================
+const getHashMapId = () => {
+  const m = window.location.hash.match(/^#map=([a-z0-9_-]+)$/);
+  return m ? m[1] : null;
+};
+const pushHashMapId = (id) => history.pushState(null, '', `#map=${id}`);
+const replaceHashMapId = (id) => history.replaceState(null, '', `#map=${id}`);
+
+// ============================================================
+//  API
+// ============================================================
+const API    = "api.php";
+const SECRET = "";
+const authHeaders = () => SECRET ? { "X-Secret": SECRET } : {};
+
+async function api(action, mapId, opts = {}) {
+  const mapQ = mapId ? `&map=${encodeURIComponent(mapId)}` : "";
+  const res = await fetch(`${API}?action=${action}${mapQ}`, opts);
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); if (j?.error) msg = j.error; } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+const apiListMaps       = ()                   => api("listmaps", null);
+const apiNewMap         = (name)               => api("newmap", null, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
+const apiRenameMap      = (id, name)           => api("renamemap", id, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) });
+const apiDeleteMap      = (id)                 => api("deletemap", id, { method: "POST", headers: { ...authHeaders() } });
+const apiLoad           = (mapId)              => api("load", mapId);
+const apiSaveMeta       = (mapId, pins, zones) => api("savemeta", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ pins, zones }) });
+const apiSaveMap        = (mapId, dataUrl)     => api("savemap", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ data: dataUrl }) });
+const apiClearMap       = (mapId)              => api("clearmap", mapId, { method: "POST", headers: { ...authHeaders() } });
+const mapImageUrl       = (mapId, v)           => `${API}?action=getmap&map=${encodeURIComponent(mapId)}${v ? "&v=" + v : ""}`;
+const apiListSnapshots  = (mapId)              => api("listsnapshots", mapId);
+const apiSaveSnapshot   = (mapId, label)       => api("savesnapshot", mapId, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ label }) });
+const apiLoadSnapshot   = (mapId, snapId)      => fetch(`${API}?action=loadsnapshot&map=${encodeURIComponent(mapId)}&snapshot=${encodeURIComponent(snapId)}`, { method: "POST", headers: { ...authHeaders() } }).then(r => r.json());
+const apiDeleteSnapshot = (mapId, snapId)      => fetch(`${API}?action=deletesnapshot&map=${encodeURIComponent(mapId)}&snapshot=${encodeURIComponent(snapId)}`, { method: "POST", headers: { ...authHeaders() } }).then(r => r.json());
+
+function compressImage(file, { maxDim = 2400, quality = 0.82 } = {}) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Could not decode image"));
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ============================================================
+//  Icons
+// ============================================================
+const Svg = ({ size = 24, children, ...rest }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...rest}>
+    {children}
+  </svg>
+);
+const MapPin    = (p) => <Svg {...p}><path d="M20 10c0 7-8 13-8 13s-8-6-8-13a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></Svg>;
+const Skull     = (p) => <Svg {...p}><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></Svg>;
+const BookOpen  = (p) => <Svg {...p}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></Svg>;
+const Users     = (p) => <Svg {...p}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></Svg>;
+const Coins     = (p) => <Svg {...p}><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></Svg>;
+const Swords    = (p) => <Svg {...p}><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></Svg>;
+const Eye       = (p) => <Svg {...p}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></Svg>;
+const X         = (p) => <Svg {...p}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></Svg>;
+const Trash2    = (p) => <Svg {...p}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></Svg>;
+const Upload    = (p) => <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></Svg>;
+const Compass   = (p) => <Svg {...p}><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></Svg>;
+const AlertTriangle = (p) => <Svg {...p}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></Svg>;
+const Anchor    = (p) => <Svg {...p}><circle cx="12" cy="5" r="3"/><line x1="12" x2="12" y1="22" y2="8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></Svg>;
+const Scroll    = (p) => <Svg {...p}><path d="M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/></Svg>;
+const ZoomIn    = (p) => <Svg {...p}><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="11" x2="11" y1="8" y2="14"/><line x1="8" x2="14" y1="11" y2="11"/></Svg>;
+const ZoomOut   = (p) => <Svg {...p}><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/><line x1="8" x2="14" y1="11" y2="11"/></Svg>;
+const Move      = (p) => <Svg {...p}><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/></Svg>;
+const Crosshair = (p) => <Svg {...p}><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></Svg>;
+const Plus      = (p) => <Svg {...p}><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></Svg>;
+const Camera    = (p) => <Svg {...p}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></Svg>;
+const RotateCcw = (p) => <Svg {...p}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></Svg>;
+const Pencil    = (p) => <Svg {...p}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></Svg>;
+const ChevronDown = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9"/></Svg>;
+const Brush     = (p) => <Svg {...p}><path d="M9.06 11.9l8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.07"/><path d="M7.07 14.94c-1.31 2.91-1.52 3.94-1.07 4.39.45.45 1.48.24 4.39-1.07"/><path d="M3 21l4-1-3-3Z"/></Svg>;
+const Undo2     = (p) => <Svg {...p}><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></Svg>;
+const Redo2     = (p) => <Svg {...p}><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/></Svg>;
+const Check     = (p) => <Svg {...p}><polyline points="20 6 9 17 4 12"/></Svg>;
+const Download  = (p) => <Svg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></Svg>;
+const GrabHand  = (p) => <Svg {...p}><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></Svg>;
+const Flame     = (p) => <Svg {...p}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></Svg>;
+const Mountain  = (p) => <Svg {...p}><path d="m8 3 4 8 5-5 5 15H2L8 3z"/></Svg>;
+const TreePine  = (p) => <Svg {...p}><path d="m17 14 3 3.1a1 1 0 0 1-.7 1.7H4.7a1 1 0 0 1-.7-1.7L7 14"/><path d="m14 6 3 3.1a1 1 0 0 1-.7 1.7H7.7a1 1 0 0 1-.7-1.7L10 6"/><path d="M12 2v4"/><path d="M10 22v-4"/><path d="M14 22v-4"/></Svg>;
+const Waves     = (p) => <Svg {...p}><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2"/></Svg>;
+const Crown     = (p) => <Svg {...p}><path d="M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.43l4.02-2.884a.5.5 0 0 1 .794.519l-2.028 9.586a1 1 0 0 1-.973.785H5.282a1 1 0 0 1-.973-.785L2.28 6.934a.5.5 0 0 1 .794-.519l4.02 2.884a1 1 0 0 0 1.516-.43z"/></Svg>;
+const Star      = (p) => <Svg {...p}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></Svg>;
+const Zap       = (p) => <Svg {...p}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></Svg>;
+const Home      = (p) => <Svg {...p}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></Svg>;
+const Heart     = (p) => <Svg {...p}><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></Svg>;
+const Shield    = (p) => <Svg {...p}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></Svg>;
+const Key       = (p) => <Svg {...p}><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></Svg>;
+const Moon      = (p) => <Svg {...p}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></Svg>;
+const Gem       = (p) => <Svg {...p}><path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/><path d="M2 9h20"/></Svg>;
+const MouseIcon = (p) => <Svg {...p}><rect x="6" y="3" width="12" height="18" rx="6"/><line x1="12" x2="12" y1="7" y2="11"/></Svg>;
+
+// ============================================================
+//  Constants
+// ============================================================
+const PIN_TYPES = {
+  quest:    { label: "Quest",    icon: Scroll,   color: "#b8860b", glow: "#e6b833" },
+  lore:     { label: "Lore",     icon: BookOpen, color: "#1a4d5c", glow: "#3a8aa3" },
+  npc:      { label: "NPC",      icon: Users,    color: "#4a6741", glow: "#7ba070" },
+  treasure: { label: "Treasure", icon: Coins,    color: "#9a7b1f", glow: "#d4a82a" },
+  danger:   { label: "Danger",   icon: Skull,    color: "#8b1a1a", glow: "#c93838" },
+  combat:   { label: "Combat",   icon: Swords,   color: "#5c2317", glow: "#a04030" },
+  port:     { label: "Port",     icon: Anchor,   color: "#2a4a6b", glow: "#5478a3" },
+};
+
+const DANGER_LEVELS = {
+  safe:   { label: "Safe",   fill: "rgba(74, 103, 65, 0.38)",  stroke: "#4a6741", desc: "Common encounters: travelers, merchants, minor wildlife." },
+  low:    { label: "Low",    fill: "rgba(184, 134, 11, 0.46)", stroke: "#b8860b", desc: "Wandering bandits, weak beasts, navigational hazards." },
+  medium: { label: "Medium", fill: "rgba(196, 100, 30, 0.52)", stroke: "#c4641e", desc: "Organized threats, dangerous fauna, magical disturbances." },
+  high:   { label: "High",   fill: "rgba(139, 26, 26, 0.58)",  stroke: "#8b1a1a", desc: "Apex predators, raiding parties, elite cultists." },
+  lethal: { label: "Lethal", fill: "rgba(60, 8, 8, 0.72)",     stroke: "#3c0808", desc: "Legendary creatures, planar incursions, certain death." },
+};
+
+const MAX_HISTORY = 4;
+
+const CUSTOM_ICONS = {
+  star: Star, flame: Flame, mountain: Mountain, tree: TreePine,
+  waves: Waves, crown: Crown, zap: Zap, home: Home,
+  heart: Heart, shield: Shield, key: Key, moon: Moon,
+  gem: Gem, skull: Skull, swords: Swords, anchor: Anchor,
+};
+
+function getPinType(p) {
+  if (p.type === "custom") {
+    const ico = CUSTOM_ICONS[p.customIconKey] || Star;
+    const col = p.customColor || "#7a5c3a";
+    return { label: p.customLabel || "Custom", icon: ico, color: col, glow: col };
+  }
+  return PIN_TYPES[p.type] || PIN_TYPES.quest;
+}
+
+const FACTION_COLORS = ["#8b1a1a","#1a3a8b","#1a6b1a","#8b6b1a","#6b1a8b","#1a6b6b","#8b3a1a","#4a4a4a"];
+
+function getZoneColors(z) {
+  if (z.zoneKind === "faction") {
+    const col = z.factionColor || "#6b1a8b";
+    return { fill: col + "60", stroke: col };
+  }
+  return DANGER_LEVELS[z.dangerLevel] || DANGER_LEVELS.medium;
+}
+
+// ============================================================
+//  Root — manages maps list, active map, URL hash
+// ============================================================
+function App() {
+  const [maps, setMaps]               = useState(null);
+  const [activeMapId, setActiveMapId] = useState(null);
+  const [globalError, setGlobalError] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { maps: list } = await apiListMaps();
+        if (!list || list.length === 0) {
+          const created = await apiNewMap("Menagerie Coast");
+          const entry = { id: created.id, name: created.name };
+          setMaps([entry]);
+          setActiveMapId(created.id);
+          sessionStorage.setItem('lastMapId', created.id);
+          replaceHashMapId(created.id);
+        } else {
+          setMaps(list);
+          const hashId   = getHashMapId();
+          const storedId = sessionStorage.getItem('lastMapId');
+          const preferred = hashId || storedId;
+          const initial = (preferred && list.some(m => m.id === preferred)) ? preferred : list[0].id;
+          setActiveMapId(initial);
+          replaceHashMapId(initial);
+        }
+      } catch (e) {
+        setGlobalError("Could not reach the server: " + e.message);
+        setMaps([]);
+      }
+    })();
+  }, []);
+
+  // Browser back / forward support
+  useEffect(() => {
+    if (!maps) return;
+    const handler = () => {
+      const id = getHashMapId();
+      if (id && maps.some(m => m.id === id)) {
+        sessionStorage.setItem('lastMapId', id);
+        setActiveMapId(id);
+      }
+    };
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
+  }, [maps]);
+
+  const selectMap = (id) => {
+    sessionStorage.setItem('lastMapId', id);
+    pushHashMapId(id);
+    setActiveMapId(id);
+  };
+
+  const handleNewMap = async () => {
+    const name = prompt("Name for the new map:");
+    if (!name?.trim()) return;
+    try {
+      const created = await apiNewMap(name.trim());
+      const fresh = await apiListMaps();
+      setMaps(fresh.maps);
+      selectMap(created.id);
+    } catch (e) { alert("Could not create map: " + e.message); }
+  };
+
+  const handleRenameMap = async (id, currentName) => {
+    const name = prompt("Rename map:", currentName);
+    if (!name?.trim() || name.trim() === currentName) return;
+    try {
+      await apiRenameMap(id, name.trim());
+      setMaps(prev => prev.map(m => m.id === id ? { ...m, name: name.trim() } : m));
+    } catch (e) { alert("Could not rename: " + e.message); }
+  };
+
+  const handleDeleteMap = async (id) => {
+    const m = maps.find(m => m.id === id);
+    if (!confirm(`Delete "${m?.name}"? This cannot be undone.`)) return;
+    try {
+      await apiDeleteMap(id);
+      const fresh = await apiListMaps();
+      setMaps(fresh.maps);
+      if (activeMapId === id) selectMap(fresh.maps[0]?.id ?? null);
+    } catch (e) { alert("Could not delete: " + e.message); }
+  };
+
+  if (maps === null) return <div className="splash">Unfurling the chart…</div>;
+  if (globalError) return (
+    <div className="splash flex-col gap-3 text-center px-8">
+      <AlertTriangle size={32} style={{ color: "#8b1a1a" }} />
+      <p style={{ color: "#5c1a1a" }}>{globalError}</p>
+    </div>
+  );
+
+  return (
+    <div className="w-full h-full flex flex-col" style={{ fontFamily: "'EB Garamond', Georgia, serif", background: `radial-gradient(ellipse at 20% 10%, #e8d4a8 0%, transparent 55%), radial-gradient(ellipse at 80% 90%, #c9a875 0%, transparent 60%), radial-gradient(ellipse at 50% 50%, #d8c094 0%, #b8966a 100%)`, color: "#2a1810" }}>
+      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.15  0 0 0 0 0.1  0 0 0 0 0.05  0 0 0 0.18 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>")`, mixBlendMode: "multiply", opacity: 0.55, zIndex: 0 }} />
+      <MapTabBar maps={maps} activeMapId={activeMapId} onSelect={selectMap} onNew={handleNewMap} onRename={handleRenameMap} onDelete={handleDeleteMap} />
+      <div className="flex-1 overflow-hidden relative" style={{ zIndex: 1 }}>
+        {activeMapId && <MapCanvas key={activeMapId} mapId={activeMapId} mapName={maps.find(m => m.id === activeMapId)?.name ?? ""} />}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  Tab bar
+// ============================================================
+function MapTabBar({ maps, activeMapId, onSelect, onNew, onRename, onDelete }) {
+  return (
+    <div className="flex items-stretch overflow-x-auto tab-scroll flex-shrink-0"
+         style={{ borderBottom: "2px solid #5c4030", backgroundColor: "rgba(42, 24, 16, 0.93)", minHeight: 38, zIndex: 10 }}>
+      {maps.map(m => (
+        <MapTab key={m.id} map={m} active={m.id === activeMapId}
+                onSelect={() => onSelect(m.id)}
+                onRename={() => onRename(m.id, m.name)}
+                onDelete={maps.length > 1 ? () => onDelete(m.id) : null} />
+      ))}
+      <button onClick={onNew}
+              className="flex items-center gap-1 px-3 py-1 text-xs opacity-60 hover:opacity-100 flex-shrink-0 transition-opacity"
+              style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }} title="New map">
+        <Plus size={13} /> New Map
+      </button>
+    </div>
+  );
+}
+
+function MapTab({ map, active, onSelect, onRename, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e) => { if (!menuRef.current?.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuOpen]);
+  return (
+    <div className="flex items-center gap-1 px-3 py-1 flex-shrink-0 relative border-r cursor-pointer transition-colors"
+         style={{ borderColor: "#5c4030", backgroundColor: active ? "rgba(244, 232, 208, 0.15)" : "transparent", borderBottom: active ? "2px solid #e8d4a8" : "2px solid transparent", marginBottom: -2 }}
+         onClick={onSelect}>
+      <span style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 13, color: active ? "#f4e8d0" : "#a89070", whiteSpace: "nowrap" }}>{map.name}</span>
+      <div className="relative" ref={menuRef} onClick={e => e.stopPropagation()}>
+        <button className="ml-1 p-0.5 rounded opacity-50 hover:opacity-100 transition-opacity" style={{ color: "#f4e8d0" }}
+                onClick={() => setMenuOpen(o => !o)} title="Map options"><ChevronDown size={11} /></button>
+        {menuOpen && (
+          <div className="absolute top-full left-0 mt-1 rounded shadow-lg z-50 overflow-hidden"
+               style={{ backgroundColor: "rgba(42, 24, 16, 0.97)", border: "1px solid #8b6f47", minWidth: 120 }}>
+            <button onClick={() => { setMenuOpen(false); onRename(); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/10 text-left"
+                    style={{ color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif" }}><Pencil size={12} /> Rename</button>
+            {onDelete && (
+              <button onClick={() => { setMenuOpen(false); onDelete(); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/10 text-left"
+                      style={{ color: "#c93838", fontFamily: "'IM Fell English SC', serif" }}><Trash2 size={12} /> Delete</button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+//  MapCanvas — isolated per map via key=mapId
+// ============================================================
+function MapCanvas({ mapId, mapName }) {
+  const [map, setMap]               = useState(null);
+  const [pins, setPins]             = useState([]);
+  const [zones, setZones]           = useState([]);
+  const [mode, setMode]             = useState("view");
+  const [editingItem, setEditingItem] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [drawing, setDrawing]       = useState(null);
+  const [loaded, setLoaded]         = useState(false);
+  const [saveStatus, setSaveStatus] = useState("idle");
+  const [storageError, setStorageError] = useState(null);
+  const [zoom, setZoom]             = useState(1);
+  const [pan, setPan]               = useState({ x: 0, y: 0 });
+  const [panning, setPanning]       = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+  const [snapshotsOpen, setSnapshotsOpen] = useState(false);
+  const [snapshots, setSnapshots]   = useState([]);
+  const [snapshotStatus, setSnapshotStatus] = useState("idle");
+  const [movingPin, setMovingPin] = useState(null);
+  const [zonePickerFor, setZonePickerFor] = useState(null); // "circle" | "brush"
+  const [pendingZoneKind, setPendingZoneKind] = useState("environmental");
+  const [toasts, setToasts] = useState([]);
+  const [hiddenTypes, setHiddenTypes] = useState(new Set());
+  const [hiddenZoneKinds, setHiddenZoneKinds] = useState(new Set());
+  const [scrollMode, setScrollMode] = useState(false);
+
+  const addToast = useCallback((message, type = "success") => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  }, []);
+
+  // Undo / redo — track add/delete operations only (not text edits)
+  const [undoStack, setUndoStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+
+  const wrapRef         = useRef(null);
+  const mapRef          = useRef(null);
+  const imgContainerRef = useRef(null);
+  const fileInputRef    = useRef(null);
+  const pointersRef     = useRef(new Map());
+  const gestureRef      = useRef(null);
+  const brushPointsRef  = useRef(null); // accumulates points during brush stroke
+  const lastVersionRef    = useRef(0);
+  const lastMapVersionRef = useRef(0);
+  const editingRef        = useRef(null);
+  // Mirror current pins/zones into refs so history closures always capture latest
+  const pinsRef  = useRef(pins);
+  const zonesRef = useRef(zones);
+  useEffect(() => { editingRef.current = editingItem; }, [editingItem]);
+  useEffect(() => { pinsRef.current = pins; }, [pins]);
+  useEffect(() => { zonesRef.current = zones; }, [zones]);
+
+  const triggerFileSelect = () => fileInputRef.current?.click();
+
+  // ---------- History ----------
+  const pushToHistory = useCallback(() => {
+    setUndoStack(prev => [...prev.slice(-(MAX_HISTORY - 1)), { pins: pinsRef.current, zones: zonesRef.current }]);
+    setRedoStack([]);
+  }, []);
+
+  const undo = useCallback(() => {
+    setUndoStack(prev => {
+      if (prev.length === 0) return prev;
+      const snapshot = prev[prev.length - 1];
+      setRedoStack(r => [{ pins: pinsRef.current, zones: zonesRef.current }, ...r.slice(0, MAX_HISTORY - 1)]);
+      setPins(snapshot.pins);
+      setZones(snapshot.zones);
+      setEditingItem(null); setSelectedId(null);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setRedoStack(prev => {
+      if (prev.length === 0) return prev;
+      const snapshot = prev[0];
+      setUndoStack(u => [...u.slice(-(MAX_HISTORY - 1)), { pins: pinsRef.current, zones: zonesRef.current }]);
+      setPins(snapshot.pins);
+      setZones(snapshot.zones);
+      setEditingItem(null); setSelectedId(null);
+      return prev.slice(1);
+    });
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [undo, redo]);
+
+  // ---------- Initial load ----------
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiLoad(mapId);
+        setPins(data.pins || []);
+        setZones(data.zones || []);
+        lastVersionRef.current = data.version || 0;
+        if (data.hasMap) {
+          lastMapVersionRef.current = data.mapVersion || 0;
+          setMap(mapImageUrl(mapId, data.mapVersion));
+        }
+        const { snapshots: snaps } = await apiListSnapshots(mapId);
+        setSnapshots(snaps || []);
+      } catch (e) { setStorageError("Could not reach the server: " + e.message); }
+      setLoaded(true);
+    })();
+  }, [mapId]);
+
+  // ---------- Autosave meta ----------
+  const skipNextSave = useRef(true);
+  useEffect(() => {
+    if (!loaded) return;
+    if (skipNextSave.current) { skipNextSave.current = false; return; }
+    setSaveStatus("saving");
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiSaveMeta(mapId, pins, zones);
+        lastVersionRef.current = res.version || lastVersionRef.current;
+        setSaveStatus("saved");
+        setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
+      } catch { setSaveStatus("error"); }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [pins, zones, loaded]);
+
+  // ---------- Poll ----------
+  useEffect(() => {
+    if (!loaded) return;
+    let alive = true;
+    const tick = async () => {
+      if (!alive || editingRef.current || saveStatus === "saving") return;
+      try {
+        const data = await apiLoad(mapId);
+        if (!alive) return;
+        if ((data.version || 0) > lastVersionRef.current) {
+          lastVersionRef.current = data.version;
+          setPins(data.pins || []); setZones(data.zones || []);
+          skipNextSave.current = true;
+        }
+        if ((data.mapVersion || 0) > lastMapVersionRef.current) {
+          lastMapVersionRef.current = data.mapVersion;
+          setMap(mapImageUrl(mapId, data.mapVersion));
+        } else if (!data.hasMap && map) { setMap(null); }
+      } catch {}
+    };
+    const id = setInterval(tick, 5000);
+    const onFocus = () => tick();
+    window.addEventListener("focus", onFocus);
+    return () => { alive = false; clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [loaded, saveStatus, map, mapId]);
+
+  // ---------- Map upload ----------
+  const uploadFile = useCallback(async (file) => {
+    if (!file.type.startsWith("image/")) { setStorageError("Please choose an image file."); return; }
+    setStorageError(null); setSaveStatus("saving");
+    try {
+      const dataUrl = await compressImage(file);
+      const res = await apiSaveMap(mapId, dataUrl);
+      lastMapVersionRef.current = res.mapVersion || Date.now();
+      setMap(mapImageUrl(mapId, lastMapVersionRef.current));
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
+      addToast("Chart uploaded.");
+    } catch (err) { setSaveStatus("error"); setStorageError("Upload failed: " + err.message); addToast("Upload failed.", "error"); }
+  }, [mapId, addToast]);
+
+  const handleMapUpload = async (e) => {
+    const file = e.target.files?.[0]; e.target.value = "";
+    if (!file) return;
+    uploadFile(file);
+  };
+
+  // ---------- Snapshots ----------
+  const handleSaveSnapshot = async () => {
+    const label = prompt("Label this snapshot (optional — leave blank for auto-timestamp):");
+    if (label === null) return;
+    setSnapshotStatus("saving");
+    try {
+      const snap = await apiSaveSnapshot(mapId, label.trim());
+      setSnapshots(prev => [...prev, snap]);
+      setSnapshotStatus("saved");
+      setTimeout(() => setSnapshotStatus("idle"), 1500);
+      addToast("Snapshot saved.");
+    } catch (e) { setSnapshotStatus("error"); addToast("Snapshot failed: " + e.message, "error"); }
+  };
+
+  const handleDownloadMapData = () => {
+    const payload = { map: mapName, pins, zones, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${mapName.replace(/\s+/g, "_").toLowerCase()}_data.json`;
+    a.click(); URL.revokeObjectURL(url);
+    addToast("Map data downloaded.");
+  };
+
+  const handleRestoreSnapshot = async (snap) => {
+    if (!confirm(`Restore snapshot "${snap.label}"? Current state will be overwritten.`)) return;
+    try {
+      const res = await apiLoadSnapshot(mapId, snap.id);
+      if (res.error) throw new Error(res.error);
+      const data = await apiLoad(mapId);
+      setPins(data.pins || []); setZones(data.zones || []);
+      lastVersionRef.current = data.version || 0;
+      skipNextSave.current = true;
+      if (data.hasMap) { lastMapVersionRef.current = data.mapVersion || 0; setMap(mapImageUrl(mapId, data.mapVersion)); }
+      else { lastMapVersionRef.current = 0; setMap(null); }
+    } catch (e) { alert("Restore failed: " + e.message); }
+  };
+
+  const handleDeleteSnapshot = async (snap) => {
+    if (!confirm(`Delete snapshot "${snap.label}"?`)) return;
+    try { await apiDeleteSnapshot(mapId, snap.id); setSnapshots(prev => prev.filter(s => s.id !== snap.id)); }
+    catch (e) { alert("Delete failed: " + e.message); }
+  };
+
+  // ---------- Coords — use inner image container for accuracy at all zoom levels ----------
+  const eventToMapCoords = (e) => {
+    const el = imgContainerRef.current || mapRef.current;
+    const rect = el.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top)  / rect.height)),
+    };
+  };
+
+  // ---------- Pointer handling ----------
+  const handleMapPointerDown = (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch {}
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const count = pointersRef.current.size;
+
+    if (count === 2) {
+      const pts = [...pointersRef.current.values()];
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      gestureRef.current = { type: "pinch", initialDist: dist || 1, initialZoom: zoom, initialPan: { ...pan }, initialMid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 } };
+      setDrawing(null); setPanning(null); brushPointsRef.current = null; return;
+    }
+    if (count !== 1) return;
+
+    if (mode === "pan") { setPanning({ startX: e.clientX, startY: e.clientY, origX: pan.x, origY: pan.y }); return; }
+
+    if (mode === "pin") {
+      const { x, y } = eventToMapCoords(e);
+      pushToHistory();
+      const newPin = { id: "p_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), x, y, title: "New Pin", description: "", type: "quest" };
+      setPins(prev => [...prev, newPin]);
+      setEditingItem({ kind: "pin", id: newPin.id });
+      setMode("view"); return;
+    }
+
+    if (mode === "zone") {
+      const { x, y } = eventToMapCoords(e);
+      setDrawing({ x, y, radius: 0 }); return;
+    }
+
+    if (mode === "brush") {
+      const { x, y } = eventToMapCoords(e);
+      brushPointsRef.current = [{ x, y }];
+      setDrawing({ type: "path", points: brushPointsRef.current });
+    }
+  };
+
+  const handleMapPointerMove = (e) => {
+    if (pointersRef.current.has(e.pointerId)) pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (gestureRef.current?.type === "pinch" && pointersRef.current.size >= 2) {
+      const pts = [...pointersRef.current.values()].slice(0, 2);
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      const newZoom = Math.max(0.5, Math.min(6, gestureRef.current.initialZoom * dist / gestureRef.current.initialDist));
+      const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      setZoom(newZoom);
+      setPan({ x: gestureRef.current.initialPan.x + (mid.x - gestureRef.current.initialMid.x), y: gestureRef.current.initialPan.y + (mid.y - gestureRef.current.initialMid.y) });
+      return;
+    }
+
+    if (panning) { setPan({ x: panning.origX + (e.clientX - panning.startX), y: panning.origY + (e.clientY - panning.startY) }); return; }
+
+    if (drawing && !drawing.type) {
+      const { x, y } = eventToMapCoords(e);
+      setDrawing({ ...drawing, radius: Math.hypot(x - drawing.x, y - drawing.y) });
+      return;
+    }
+
+    if (drawing?.type === "path" && brushPointsRef.current) {
+      const { x, y } = eventToMapCoords(e);
+      const pts = brushPointsRef.current;
+      const last = pts[pts.length - 1];
+      if (Math.hypot(x - last.x, y - last.y) > 0.003) {
+        brushPointsRef.current = [...pts, { x, y }];
+        setDrawing({ type: "path", points: brushPointsRef.current });
+      }
+    }
+  };
+
+  const handleMapPointerUp = (e) => {
+    if (e?.pointerId !== undefined) pointersRef.current.delete(e.pointerId);
+    if (gestureRef.current?.type === "pinch" && pointersRef.current.size < 2) { gestureRef.current = null; setPanning(null); setDrawing(null); brushPointsRef.current = null; return; }
+    if (panning && pointersRef.current.size === 0) { setPanning(null); return; }
+
+    if (drawing && pointersRef.current.size === 0) {
+      if (drawing.type === "path") {
+        const pts = brushPointsRef.current || [];
+        brushPointsRef.current = null;
+        if (pts.length >= 3) {
+          pushToHistory();
+          const isFaction = pendingZoneKind === "faction";
+          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), type: "path", zoneKind: pendingZoneKind, points: pts, name: isFaction ? "New Territory" : "New Coastline", dangerLevel: isFaction ? undefined : "medium", factionName: isFaction ? "" : undefined, factionColor: isFaction ? "#6b1a8b" : undefined, description: "" };
+          setZones(prev => [...prev, newZone]);
+          setEditingItem({ kind: "zone", id: newZone.id });
+          setMode("view");
+        }
+      } else {
+        if (drawing.radius >= 0.015) {
+          pushToHistory();
+          const isFaction = pendingZoneKind === "faction";
+          const newZone = { id: "z_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6), zoneKind: pendingZoneKind, x: drawing.x, y: drawing.y, radius: drawing.radius, name: isFaction ? "New Territory" : "New Hot Zone", dangerLevel: isFaction ? undefined : "medium", factionName: isFaction ? "" : undefined, factionColor: isFaction ? "#6b1a8b" : undefined, description: "" };
+          setZones(prev => [...prev, newZone]);
+          setEditingItem({ kind: "zone", id: newZone.id });
+          setMode("view");
+        }
+      }
+      setDrawing(null);
+    }
+  };
+
+  useEffect(() => {
+    const up = (e) => handleMapPointerUp(e);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => { window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
+  }, [drawing, panning]);
+
+  const handleWheel = (e) => {
+    if (scrollMode) {
+      setPan(p => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+      return;
+    }
+    setZoom(z => Math.max(0.5, Math.min(6, z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
+  };
+  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
+  const updatePin  = (id, patch) => setPins(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+  const updateZone = (id, patch) => setZones(prev => prev.map(z => z.id === id ? { ...z, ...patch } : z));
+  const deletePin  = (id) => { pushToHistory(); setPins(prev => prev.filter(p => p.id !== id)); setEditingItem(null); setSelectedId(null); };
+  const deleteZone = (id) => { pushToHistory(); setZones(prev => prev.filter(z => z.id !== id)); setEditingItem(null); setSelectedId(null); };
+
+  const focusOnItem = useCallback((cx, cy) => {
+    if (!imgContainerRef.current) return;
+    const imgW = imgContainerRef.current.clientWidth;
+    const imgH = imgContainerRef.current.clientHeight;
+    const targetZoom = Math.max(zoom, 2.5);
+    setPan({ x: -targetZoom * (cx * imgW - imgW / 2), y: -targetZoom * (cy * imgH - imgH / 2) });
+    setZoom(targetZoom);
+  }, [zoom]);
+
+  const handleZoomToCluster = useCallback((group) => {
+    if (!imgContainerRef.current) return;
+    const xs = group.map(p => p.x), ys = group.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const spanX = Math.max(0.05, maxX - minX);
+    const spanY = Math.max(0.05, maxY - minY);
+    const newZoom = Math.min(5, Math.min(0.65 / spanX, 0.65 / spanY));
+    const cX = (minX + maxX) / 2, cY = (minY + maxY) / 2;
+    const imgW = imgContainerRef.current.clientWidth;
+    const imgH = imgContainerRef.current.clientHeight;
+    setPan({ x: -newZoom * (cX * imgW - imgW / 2), y: -newZoom * (cY * imgH - imgH / 2) });
+    setZoom(newZoom);
+  }, []);
+
+  const togglePinType = useCallback((type) => {
+    setHiddenTypes(prev => { const s = new Set(prev); if (s.has(type)) s.delete(type); else s.add(type); return s; });
+  }, []);
+
+  const toggleZoneKind = useCallback((kind) => {
+    setHiddenZoneKinds(prev => { const s = new Set(prev); if (s.has(kind)) s.delete(kind); else s.add(kind); return s; });
+  }, []);
+
+  const editingObj = editingItem ? (editingItem.kind === "pin" ? pins.find(p => p.id === editingItem.id) : zones.find(z => z.id === editingItem.id)) : null;
+
+  const visiblePins = pins.filter(p => !hiddenTypes.has(p.type === "custom" ? "custom" : p.type));
+  const visibleZones = zones.filter(z => !hiddenZoneKinds.has(z.zoneKind || "environmental"));
+  const CLUSTER_THRESHOLD = mode === "view" ? 0.08 / Math.max(1, zoom) : 0;
+  const clusterAssigned = new Set();
+  const pinClusters = [];
+  for (const p of visiblePins) {
+    if (clusterAssigned.has(p.id)) continue;
+    const group = [p];
+    clusterAssigned.add(p.id);
+    for (const q of visiblePins) {
+      if (clusterAssigned.has(q.id)) continue;
+      if (Math.hypot(p.x - q.x, p.y - q.y) < CLUSTER_THRESHOLD) { group.push(q); clusterAssigned.add(q.id); }
+    }
+    if (group.length > 1) pinClusters.push(group);
+  }
+  const clusteredPinIds = new Set(pinClusters.flatMap(g => g.map(p => p.id)));
+
+  const cursorClass = { view: "cursor-default", pin: "cursor-crosshair", zone: "cursor-crosshair", brush: "cursor-crosshair", pan: panning ? "cursor-grabbing" : "cursor-grab", movepin: movingPin ? "cursor-grabbing" : "cursor-default" }[mode] || "cursor-default";
+
+  if (!loaded) return (
+    <div className="splash flex-col gap-3">
+      <Compass size={48} style={{ color: "#5c4030", animation: "spin 3s linear infinite" }} />
+      <span style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 16 }}>Unfurling the chart…</span>
+    </div>
+  );
+
+  return (
+    <div className="w-full h-full relative overflow-hidden flex">
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleMapUpload}
+             style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+             aria-hidden="true" tabIndex={-1} />
+
+      {/* SIDEBAR */}
+      <aside className={`relative h-full transition-all duration-300 border-r-2 flex flex-col ${sidebarOpen ? "w-80" : "w-0"}`}
+             style={{ borderColor: "#5c4030", backgroundColor: "rgba(244, 232, 208, 0.85)", flexShrink: 0 }}>
+        {sidebarOpen && (
+          <>
+            <div className="px-5 pt-4 pb-3 border-b" style={{ borderColor: "#8b6f47" }}>
+              <div className="flex items-center gap-2 mb-0.5">
+                <Compass size={18} style={{ color: "#5c4030" }} />
+                <h1 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 20, letterSpacing: "0.04em" }}>{mapName}</h1>
+              </div>
+              <p style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>A cartographer's ledger of perils &amp; promises</p>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-4 py-3">
+              {pins.length === 0 && zones.length === 0 ? (
+                <div className="text-center py-10 px-4" style={{ color: "#5c4030", fontStyle: "italic" }}>
+                  <Scroll size={28} className="mx-auto mb-3 opacity-50" />
+                  <p style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>The chart is yet unmarked.<br/>Place a pin or trace a hot zone.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {zones.length > 0 && (
+                    <div className="mb-3">
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Hot Zones · {zones.length}</h3>
+                      {zones.map(z => {
+                        const D = getZoneColors(z);
+                        const isFaction = z.zoneKind === "faction";
+                        const kindLabel = isFaction ? (z.factionName || "Faction") : (DANGER_LEVELS[z.dangerLevel]?.label || "");
+                        return (
+                        <button key={z.id} onClick={() => { setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); const c = z.type === "path" ? z.points[Math.floor(z.points.length / 2)] : { x: z.x, y: z.y }; focusOnItem(c.x, c.y); }}
+                                className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5"
+                                style={{ border: `1.5px solid ${D.stroke}`, backgroundColor: D.fill }}>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {z.type === "path" ? (isFaction ? <Crown size={11} style={{ color: D.stroke, flexShrink: 0 }} /> : <Brush size={11} style={{ color: D.stroke, flexShrink: 0 }} />) : (isFaction ? <Crown size={11} style={{ color: D.stroke, flexShrink: 0 }} /> : <Crosshair size={11} style={{ color: D.stroke, flexShrink: 0 }} />)}
+                              <span className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{z.name}</span>
+                            </div>
+                            <span className="text-xs uppercase tracking-wider whitespace-nowrap" style={{ color: D.stroke, fontWeight: 600 }}>{kindLabel}</span>
+                          </div>
+                        </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {pins.length > 0 && (
+                    <div>
+                      <h3 className="text-xs uppercase tracking-widest mb-2 px-1" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>Pins · {pins.length}</h3>
+                      {pins.map(p => {
+                        const T = getPinType(p);
+                        const Ico = T.icon;
+                        return (
+                          <button key={p.id} onClick={() => { setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id }); focusOnItem(p.x, p.y); }}
+                                  className="w-full text-left mb-1.5 px-3 py-2 rounded-sm transition-all hover:translate-x-0.5 flex items-center gap-2.5"
+                                  style={{ backgroundColor: "rgba(255, 250, 235, 0.6)", border: `1px solid ${T.color}66` }}>
+                            <span className="flex items-center justify-center rounded-full flex-shrink-0" style={{ width: 24, height: 24, backgroundColor: T.color, color: "#f4e8d0" }}><Ico size={12} /></span>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", fontSize: 14 }}>{p.title}</div>
+                              <div className="text-xs uppercase tracking-wider" style={{ color: T.color, opacity: 0.85 }}>{T.label}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Snapshots + Download */}
+            <div className="border-t" style={{ borderColor: "#8b6f47" }}>
+              <button onClick={() => setSnapshotsOpen(o => !o)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-xs uppercase tracking-widest"
+                      style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030" }}>
+                <span className="flex items-center gap-1.5"><Camera size={13} /> Map Archives {snapshots.length > 0 && `· ${snapshots.length}`}</span>
+                <ChevronDown size={13} style={{ transform: snapshotsOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+              </button>
+              {snapshotsOpen && (
+                <div className="px-4 pb-3 space-y-2">
+                  <button onClick={handleSaveSnapshot}
+                          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs"
+                          style={{ backgroundColor: "rgba(42, 24, 16, 0.12)", border: "1px solid #8b6f47", color: "#2a1810", fontFamily: "'IM Fell English SC', serif" }}>
+                    <Camera size={12} />
+                    {snapshotStatus === "saving" ? "Saving…" : snapshotStatus === "saved" ? "✓ Saved" : "Snapshot Current Map Data"}
+                  </button>
+                  <button onClick={handleDownloadMapData}
+                          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs"
+                          style={{ backgroundColor: "rgba(42, 24, 16, 0.08)", border: "1px solid #8b6f47", color: "#2a1810", fontFamily: "'IM Fell English SC', serif" }}>
+                    <Download size={12} /> Download Current Map Data
+                  </button>
+                  {snapshots.length === 0
+                    ? <p className="text-xs text-center italic py-1" style={{ color: "#8b6f47" }}>No snapshots yet.</p>
+                    : <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {[...snapshots].reverse().map(snap => (
+                          <div key={snap.id} className="flex items-center gap-1 rounded px-2 py-1" style={{ backgroundColor: "rgba(255,250,235,0.5)", border: "1px solid #c4a86488" }}>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-semibold truncate" style={{ fontFamily: "'IM Fell English', serif", color: "#2a1810" }}>{snap.label}</div>
+                              <div className="text-xs" style={{ color: "#8b6f47" }}>{new Date(snap.ts * 1000).toLocaleString()}</div>
+                            </div>
+                            <button onClick={() => handleRestoreSnapshot(snap)} title="Restore" className="p-1 rounded hover:bg-black/10" style={{ color: "#4a6741" }}><RotateCcw size={12} /></button>
+                            <button onClick={() => handleDeleteSnapshot(snap)} title="Delete" className="p-1 rounded hover:bg-black/10" style={{ color: "#8b1a1a" }}><Trash2 size={12} /></button>
+                          </div>
+                        ))}
+                      </div>
+                  }
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-2 border-t text-xs" style={{ borderColor: "#8b6f47", color: "#5c4030", fontStyle: "italic", fontFamily: "'IM Fell English', serif" }}>
+              {saveStatus === "saving" && "Inscribing in the ledger…"}
+              {saveStatus === "saved"  && "✓ Inscribed."}
+              {saveStatus === "error"  && "⚠ The ink would not take."}
+              {saveStatus === "idle"   && "Shared with all who hold this chart."}
+            </div>
+          </>
+        )}
+        <button onClick={() => setSidebarOpen(s => !s)}
+                className="absolute top-4 -right-3 w-6 h-12 rounded-r flex items-center justify-center"
+                style={{ backgroundColor: "#5c4030", color: "#f4e8d0", zIndex: 30 }}>
+          {sidebarOpen ? "‹" : "›"}
+        </button>
+      </aside>
+
+      {/* MAP AREA */}
+      <main className="flex-1 relative overflow-hidden">
+        {!map ? (
+          <UploadGate onPickFile={triggerFileSelect} onDropFile={uploadFile} error={storageError} />
+        ) : (
+          <>
+            {/* Toolbar */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-0.5 px-2 py-1.5 rounded shadow-lg"
+                 style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
+              <ToolbarBtn active={mode === "view"}  onClick={() => setMode("view")}  icon={Eye}        label="Read" />
+              <ToolbarBtn active={mode === "pan"}   onClick={() => setMode("pan")}   icon={Move}       label="Pan" />
+              <ToolbarBtn active={scrollMode}       onClick={() => setScrollMode(s => !s)} icon={MouseIcon} label="Scroll" title={scrollMode ? "Scroll mode ON — mouse wheel pans map" : "Scroll mode OFF — mouse wheel zooms map"} />
+              <Sep />
+              <ToolbarBtn active={mode === "pin"}   onClick={() => setMode("pin")}   icon={MapPin}    label="Pin" />
+              <ToolbarBtn active={mode === "zone"} onClick={() => { setZonePickerFor("circle"); }} icon={Crosshair} label="Circle" />
+              <ToolbarBtn active={mode === "brush"}  onClick={() => { setZonePickerFor("brush"); }}  icon={Brush}     label="Brush" />
+              <Sep />
+              <ToolbarBtn disabled={undoStack.length === 0} onClick={undo} icon={Undo2} label="Undo" title={`Undo (${undoStack.length})`} />
+              <ToolbarBtn disabled={redoStack.length === 0} onClick={redo} icon={Redo2} label="Redo" />
+              <Sep />
+              <ToolbarBtn onClick={() => setZoom(z => Math.min(6, z * 1.25))} icon={ZoomIn}  label="" />
+              <ToolbarBtn onClick={() => setZoom(z => Math.max(0.5, z / 1.25))} icon={ZoomOut} label="" />
+              <button onClick={resetView} className="px-2.5 py-1.5 text-xs uppercase tracking-wider rounded" style={{ color: "#f4e8d0" }}>Reset</button>
+            </div>
+
+            {/* Zone kind picker */}
+            {zonePickerFor && (
+              <ZoneKindPicker shape={zonePickerFor}
+                onPick={(kind) => { setPendingZoneKind(kind); setMode(zonePickerFor === "circle" ? "zone" : "brush"); setZonePickerFor(null); }}
+                onDismiss={() => setZonePickerFor(null)} />
+            )}
+
+            {/* Mode hint */}
+            {mode !== "view" && !zonePickerFor && (
+              <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded text-sm"
+                   style={{ backgroundColor: "rgba(244, 232, 208, 0.95)", border: "1px dashed #5c4030", fontFamily: "'IM Fell English', serif", fontStyle: "italic" }}>
+                {mode === "pin"     && "Click anywhere on the chart to place a pin."}
+                {mode === "movepin" && "Drag the pin to reposition it. Click Read when done."}
+                {mode === "zone"   && `Click and drag to draw a ${pendingZoneKind} zone.`}
+                {mode === "brush"  && `Click and drag to paint a ${pendingZoneKind} stroke.`}
+                {mode === "pan"    && "Drag to reposition. Pinch or scroll to zoom."}
+              </div>
+            )}
+
+            {/* Replace chart button */}
+            <div className="absolute top-4 right-4 z-20">
+              <button onClick={triggerFileSelect}
+                      className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
+                      style={{ backgroundColor: "rgba(42, 24, 16, 0.93)", color: "#f4e8d0", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif" }}>
+                <Upload size={14} /><span className="hidden sm:inline">Replace Chart</span>
+              </button>
+            </div>
+
+            {/* Map canvas */}
+            <div ref={wrapRef}
+                 className={`w-full h-full overflow-hidden ${cursorClass}`}
+                 style={{ touchAction: scrollMode ? "auto" : "none" }}
+                 onWheel={handleWheel}
+                 onPointerDown={handleMapPointerDown}
+                 onPointerMove={handleMapPointerMove}
+                 onPointerUp={handleMapPointerUp}
+                 onPointerCancel={handleMapPointerUp}>
+              <div ref={mapRef}
+                   className="relative origin-center select-none"
+                   style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "center center", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", transition: panning || drawing ? "none" : "transform 0.15s ease-out" }}>
+                <div ref={imgContainerRef} className="relative" style={{ maxWidth: "100%", maxHeight: "100%" }}>
+                  <img src={map} alt="Campaign map" draggable={false}
+                       className="block max-w-full max-h-[100vh] pointer-events-none"
+                       style={{ filter: "sepia(0.08) contrast(1.02)", boxShadow: "0 8px 40px rgba(42, 24, 16, 0.4)" }}
+                       onLoad={(e) => {
+                         const w = e.target.clientWidth, h = e.target.clientHeight;
+                         e.target.parentElement.style.width = w + "px";
+                         e.target.parentElement.style.height = h + "px";
+                       }} />
+
+                  {/* SVG overlay: zones */}
+                  {(() => {
+                    const envCircles   = visibleZones.filter(z => (!z.type || z.type === "circle") && (!z.zoneKind || z.zoneKind === "environmental"));
+                    const factionCircles = visibleZones.filter(z => (!z.type || z.type === "circle") && z.zoneKind === "faction");
+                    const crossovers = [];
+                    for (const e of envCircles) for (const f of factionCircles)
+                      if (Math.hypot(e.x - f.x, e.y - f.y) < e.radius + f.radius)
+                        crossovers.push({ e, f, id: e.id + "_" + f.id });
+                    return (
+                  <svg className="absolute inset-0 pointer-events-none" style={{ width: "100%", height: "100%" }} viewBox="0 0 1 1" preserveAspectRatio="none">
+                    <defs>
+                      {zones.map(z => {
+                        const D = getZoneColors(z);
+                        return (
+                          <filter key={"glow-" + z.id} id={"glow-" + z.id} x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="0.006" result="blur"/>
+                            <feFlood floodColor={D.stroke} floodOpacity="0.6" result="color"/>
+                            <feComposite in="color" in2="blur" operator="in" result="glow"/>
+                            <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+                          </filter>
+                        );
+                      })}
+                      {crossovers.map(c => (
+                        <clipPath key={"cp-" + c.id} id={"cp-" + c.id} clipPathUnits="userSpaceOnUse">
+                          <circle cx={c.e.x} cy={c.e.y} r={c.e.radius} />
+                        </clipPath>
+                      ))}
+                    </defs>
+
+                    {/* Circle zones */}
+                    {visibleZones.filter(z => !z.type || z.type === "circle").map(z => {
+                      const D = getZoneColors(z);
+                      const sel = selectedId === z.id;
+                      return (
+                        <g key={z.id} className={`zone-circle pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
+                           onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
+                          <circle cx={z.x} cy={z.y} r={z.radius} fill={D.fill} stroke={D.stroke}
+                                  strokeWidth={sel ? 0.004 : 0.0025} strokeDasharray="0.012 0.008" vectorEffect="non-scaling-stroke"
+                                  filter={sel ? `url(#glow-${z.id})` : undefined}>
+                            {sel && <animate attributeName="stroke-dashoffset" values="0;0.04" dur="2s" repeatCount="indefinite" />}
+                          </circle>
+                        </g>
+                      );
+                    })}
+
+                    {/* Path (brush) zones */}
+                    {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
+                      const D = getZoneColors(z);
+                      const sel = selectedId === z.id;
+                      const pts = z.points.map(p => `${p.x},${p.y}`).join(" ");
+                      return (
+                        <g key={z.id} className={`zone-path pointer-events-auto${sel ? " zone-selected" : ""}`} style={{ cursor: "pointer" }}
+                           onPointerDown={(e) => { if (mode === "view") { e.stopPropagation(); setSelectedId(z.id); setEditingItem({ kind: "zone", id: z.id }); } }}>
+                          <polyline points={pts} fill="none" stroke="transparent" strokeWidth="0.04" strokeLinecap="round" />
+                          <polyline points={pts} fill="none" stroke={D.stroke}
+                                    strokeOpacity={sel ? 0.65 : 0.35} strokeWidth="0.022"
+                                    strokeLinecap="round" strokeLinejoin="round"
+                                    filter={sel ? `url(#glow-${z.id})` : undefined}
+                                    style={{ transition: "stroke-opacity 0.3s" }} />
+                          <polyline points={pts} fill="none" stroke={D.stroke}
+                                    strokeWidth={sel ? 0.004 : 0.0025} strokeLinecap="round" strokeLinejoin="round"
+                                    strokeDasharray={sel ? "0.012 0.008" : undefined} vectorEffect="non-scaling-stroke">
+                            {sel && <animate attributeName="stroke-dashoffset" values="0;0.04" dur="2s" repeatCount="indefinite" />}
+                          </polyline>
+                        </g>
+                      );
+                    })}
+
+                    {/* Crossover regions — stylish purple where faction meets environmental */}
+                    {crossovers.map(c => (
+                      <g key={"crossover-" + c.id} className="pointer-events-none">
+                        <circle cx={c.f.x} cy={c.f.y} r={c.f.radius}
+                                fill="rgba(147,51,234,0.32)" stroke="#9333ea"
+                                strokeWidth="0.003" vectorEffect="non-scaling-stroke"
+                                clipPath={`url(#cp-${c.id})`}>
+                          <animate attributeName="fill-opacity" values="0.22;0.42;0.22" dur="3s" repeatCount="indefinite" />
+                        </circle>
+                        <circle cx={c.f.x} cy={c.f.y} r={c.f.radius}
+                                fill="none" stroke="rgba(196,130,255,0.6)"
+                                strokeWidth="0.002" vectorEffect="non-scaling-stroke"
+                                clipPath={`url(#cp-${c.id})`}
+                                strokeDasharray="0.015 0.01">
+                          <animate attributeName="stroke-dashoffset" values="0;-0.05" dur="4s" repeatCount="indefinite" />
+                        </circle>
+                      </g>
+                    ))}
+
+                    {/* In-progress circle */}
+                    {drawing && !drawing.type && (
+                      <circle cx={drawing.x} cy={drawing.y} r={drawing.radius}
+                              fill="rgba(196, 100, 30, 0.2)" stroke="#5c4030" strokeWidth="0.003" strokeDasharray="0.01 0.008" />
+                    )}
+
+                    {/* In-progress brush stroke */}
+                    {drawing?.type === "path" && drawing.points?.length >= 2 && (
+                      <polyline points={drawing.points.map(p => `${p.x},${p.y}`).join(" ")}
+                                fill="none" stroke="#5c4030" strokeWidth="0.022" strokeOpacity="0.4"
+                                strokeLinecap="round" strokeLinejoin="round" />
+                    )}
+                  </svg>
+                    );
+                  })()}
+
+                  {/* Circle zone labels */}
+                  {visibleZones.filter(z => !z.type || z.type === "circle").map(z => {
+                    const D = getZoneColors(z);
+                    return (
+                      <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
+                           style={{ left: `${z.x * 100}%`, top: `${z.y * 100}%`, transform: "translate(-50%, -50%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: Math.max(9, Math.min(14, z.radius * 130)) / zoom + "px", letterSpacing: "0.05em", fontWeight: 700, maxWidth: `${z.radius * 180}%`, lineHeight: 1.1, backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2 }}>{z.name}</div>
+                    );
+                  })}
+
+                  {/* Path zone labels */}
+                  {visibleZones.filter(z => z.type === "path" && z.points?.length >= 2).map(z => {
+                    const D = getZoneColors(z);
+                    const mid = z.points[Math.floor(z.points.length / 2)];
+                    return (
+                      <div key={"label-" + z.id} className="absolute pointer-events-none text-center"
+                           style={{ left: `${mid.x * 100}%`, top: `${mid.y * 100}%`, transform: "translate(-50%, -200%)", fontFamily: "'IM Fell English SC', serif", color: D.stroke, fontSize: 11 / zoom + "px", letterSpacing: "0.05em", fontWeight: 700, whiteSpace: "nowrap", backgroundColor: "rgba(244, 232, 208, 0.8)", padding: "1px 5px", borderRadius: 2 }}>{z.name}</div>
+                    );
+                  })}
+
+                  {/* Danger / combat pulse rings (behind pins) */}
+                  {visiblePins.filter(p => (p.type === "danger" || p.type === "combat") && !clusteredPinIds.has(p.id)).map(p => {
+                    const T = getPinType(p);
+                    const scale = 1 / Math.max(0.5, zoom * 0.7);
+                    return (
+                      <div key={"pulse-" + p.id} className="absolute pointer-events-none"
+                           style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${scale})`, transformOrigin: "bottom center", zIndex: 8 }}>
+                        <div style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out infinite" }} />
+                        <div style={{ position: "absolute", top: -4, left: -4, width: 44, height: 44, borderRadius: "50%", border: `2px solid ${T.color}`, animation: "dangerRing 2s ease-out 1s infinite" }} />
+                      </div>
+                    );
+                  })}
+
+                  {/* Cluster markers */}
+                  {pinClusters.map(group => {
+                    const cx = group.reduce((s, p) => s + p.x, 0) / group.length;
+                    const cy = group.reduce((s, p) => s + p.y, 0) / group.length;
+                    const pinScale = 1 / Math.max(0.5, zoom * 0.7);
+                    const firstT = getPinType(group[0]);
+                    return (
+                      <button key={"cluster-" + group[0].id}
+                              onClick={(e) => { e.stopPropagation(); handleZoomToCluster(group); }}
+                              className="absolute pin-marker"
+                              style={{ left: `${cx * 100}%`, top: `${cy * 100}%`, transform: `translate(-50%, -50%) scale(${pinScale})`, transformOrigin: "center", zIndex: 11, cursor: "pointer", background: "none", border: "none", padding: 0 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: "50%", backgroundColor: "rgba(22,12,6,0.93)", border: `2px solid ${firstT.color}`, color: "#f4e8d0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontFamily: "'IM Fell English SC', serif", boxShadow: `0 3px 12px rgba(0,0,0,0.65), 0 0 18px ${firstT.glow}44`, position: "relative" }}>
+                          <div style={{ position: "absolute", inset: 3, borderRadius: "50%", border: `1px solid ${firstT.color}55` }} />
+                          {group.length}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {/* Pins */}
+                  {visiblePins.filter(p => !clusteredPinIds.has(p.id)).map(p => {
+                    const T = getPinType(p);
+                    const Ico = T.icon;
+                    const sel = selectedId === p.id;
+                    const isMoving = movingPin === p.id;
+                    const pinCursor = mode === "movepin" ? (isMoving ? "grabbing" : "grab") : (mode === "view" ? "pointer" : "inherit");
+                    return (
+                      <button key={p.id}
+                              onPointerDown={(e) => {
+                                if (mode === "movepin") {
+                                  e.stopPropagation();
+                                  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+                                  pushToHistory();
+                                  setMovingPin(p.id);
+                                } else if (mode === "view") {
+                                  e.stopPropagation(); setSelectedId(p.id); setEditingItem({ kind: "pin", id: p.id });
+                                }
+                              }}
+                              onPointerMove={(e) => {
+                                if (movingPin === p.id) {
+                                  const { x, y } = eventToMapCoords(e);
+                                  updatePin(p.id, { x, y });
+                                }
+                              }}
+                              onPointerUp={(e) => { if (movingPin === p.id) setMovingPin(null); }}
+                              onPointerCancel={(e) => { if (movingPin === p.id) setMovingPin(null); }}
+                              className={`absolute group pin-marker${sel ? " pin-selected" : ""}${isMoving ? " pin-moving" : ""}`}
+                              style={{ left: `${p.x * 100}%`, top: `${p.y * 100}%`, transform: `translate(-50%, -100%) scale(${1 / Math.max(0.5, zoom * 0.7)})`, transformOrigin: "bottom center", cursor: pinCursor, zIndex: sel || isMoving ? 15 : 10, animation: "pinDrop 0.4s ease-out" }}>
+                        <div className="absolute" style={{ bottom: -3, left: "50%", transform: "translateX(-50%)", width: 22, height: 6, background: "radial-gradient(ellipse, rgba(42,24,16,0.6) 0%, transparent 70%)" }} />
+                        <div className="relative flex items-center justify-center"
+                             style={{ width: 36, height: 44, transition: "transform 0.2s cubic-bezier(0.34,1.56,0.64,1), filter 0.2s", transform: isMoving ? "scale(1.2)" : "scale(1)", filter: sel || isMoving ? `drop-shadow(0 0 10px ${T.glow}) drop-shadow(0 0 4px ${T.glow})` : `drop-shadow(0 2px 5px rgba(0,0,0,0.75)) drop-shadow(0 0 10px rgba(255,255,255,0.2))` }}>
+                          {/* Magical shimmer ring on hover */}
+                          <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 pointer-events-none"
+                               style={{ background: `radial-gradient(circle at 50% 40%, ${T.glow}33 0%, transparent 70%)`, transition: "opacity 0.3s", borderRadius: "50% 50% 40% 40% / 60% 60% 40% 40%", width: 36, height: 44 }} />
+                          <svg width="36" height="44" viewBox="-2 -2 40 48" className="absolute inset-0" overflow="visible">
+                            {/* White contrast outline */}
+                            <path d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="3.5" />
+                            {/* Main body */}
+                            <path d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill={T.color} stroke="#1a0e08" strokeWidth="1.5" />
+                            {/* Hover shimmer highlight */}
+                            <path className="group-hover:opacity-100" d="M18 0 C8 0 1 8 1 17 C1 28 18 44 18 44 C18 44 35 28 35 17 C35 8 28 0 18 0 Z" fill="none" stroke={T.glow} strokeWidth="1" strokeOpacity="0" style={{ transition: "stroke-opacity 0.3s" }} />
+                            {/* Inner circle */}
+                            <circle cx="18" cy="16" r="10" fill="white" />
+                          </svg>
+                          <div className="relative" style={{ marginTop: -8, color: T.color, transition: "transform 0.2s" }}><Ico size={15} strokeWidth={2.5} /></div>
+                        </div>
+                        {/* Magical tooltip */}
+                        <div className="absolute left-1/2 -translate-x-1/2 -top-16 pin-hover-tip pointer-events-none"
+                             style={{ transition: "opacity 0.2s, transform 0.2s" }}>
+                          <div className="px-3 py-2 rounded-sm whitespace-nowrap relative overflow-hidden"
+                               style={{ backgroundColor: "rgba(18, 10, 4, 0.97)", border: `1px solid ${T.color}88`, boxShadow: `0 0 18px ${T.glow}44, 0 4px 12px rgba(0,0,0,0.5)` }}>
+                            <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${T.glow}12 0%, transparent 60%)`, pointerEvents: "none" }} />
+                            <div style={{ fontFamily: "'IM Fell English', serif", fontSize: 13, color: "#f4e8d0", fontWeight: 600, position: "relative" }}>{p.title}</div>
+                            <div style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 10, color: T.glow, textTransform: "uppercase", letterSpacing: "0.08em", position: "relative" }}>{T.label}</div>
+                          </div>
+                          <div style={{ width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: `6px solid ${T.color}88`, margin: "0 auto" }} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-3">
+              <FilterPanel hiddenTypes={hiddenTypes} hiddenZoneKinds={hiddenZoneKinds} onToggleType={togglePinType} onToggleZoneKind={toggleZoneKind} />
+              <div className="pointer-events-none opacity-50"><CompassRose size={70} /></div>
+            </div>
+          </>
+        )}
+      </main>
+
+      {editingObj && (
+        <EditPanel item={editingObj} kind={editingItem.kind}
+                   onClose={() => { setEditingItem(null); setSelectedId(null); }}
+                   onSave={(draft) => {
+                     if (editingItem.kind === "pin") updatePin(editingObj.id, draft);
+                     else updateZone(editingObj.id, draft);
+                     setEditingItem(null); setSelectedId(null);
+                     addToast("Changes saved.");
+                   }}
+                   onDelete={() => editingItem.kind === "pin" ? deletePin(editingObj.id) : deleteZone(editingObj.id)}
+                   onStartMove={editingItem.kind === "pin" ? () => {
+                     const pinId = editingObj.id;
+                     setEditingItem(null); setSelectedId(null);
+                     setMode("movepin");
+                     addToast("Drag the pin to reposition it.");
+                   } : null} />
+      )}
+
+      <ToastContainer toasts={toasts} />
+
+      {storageError && map && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 px-3 py-2 rounded text-sm flex items-center gap-2"
+             style={{ backgroundColor: "rgba(139, 26, 26, 0.95)", color: "#f4e8d0", border: "1px solid #5c0808" }}>
+          <AlertTriangle size={16} /><span>{storageError}</span>
+          <button onClick={() => setStorageError(null)} className="ml-2 opacity-80 hover:opacity-100"><X size={14} /></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+//  Shared UI
+// ============================================================
+const Sep = () => <div className="w-px h-6 mx-0.5" style={{ backgroundColor: "#8b6f47" }} />;
+
+function ToolbarBtn({ active, disabled, onClick, icon: Icon, label, title: titleProp }) {
+  return (
+    <button onClick={disabled ? undefined : onClick} disabled={disabled}
+            title={titleProp || label}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs uppercase tracking-wider"
+            style={{ color: disabled ? "#5c4030" : (active ? "#2a1810" : "#f4e8d0"), backgroundColor: active ? "#e8d4a8" : "transparent", opacity: disabled ? 0.35 : 1, fontFamily: "'IM Fell English SC', serif", cursor: disabled ? "default" : "pointer" }}>
+      <Icon size={14} />
+      {label && <span className="hidden 2xl:inline">{label}</span>}
+    </button>
+  );
+}
+
+function UploadGate({ onPickFile, onDropFile, error }) {
+  const [dragOver, setDragOver] = useState(false);
+  return (
+    <div className="absolute inset-0 flex items-center justify-center p-8"
+         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); }}
+         onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) onDropFile(f); }}>
+      <div className="max-w-md w-full text-center px-8 py-10 rounded relative"
+           style={{ backgroundColor: "rgba(244, 232, 208, 0.92)", border: dragOver ? "2px dashed #8b6f47" : "2px solid #5c4030", boxShadow: dragOver ? "0 0 0 4px rgba(139,111,71,0.25), 0 12px 40px rgba(42,24,16,0.3)" : "0 12px 40px rgba(42,24,16,0.3), inset 0 0 60px rgba(184,134,11,0.08)", transform: dragOver ? "scale(1.02)" : "scale(1)", transition: "transform 0.15s, box-shadow 0.15s" }}>
+        {["top-1 left-1", "top-1 right-1 rotate-90", "bottom-1 right-1 rotate-180", "bottom-1 left-1 -rotate-90"].map((pos, i) => (
+          <div key={i} className={`absolute ${pos}`} style={{ color: "#5c4030" }}>
+            <svg width="20" height="20" viewBox="0 0 20 20"><path d="M1 1 L10 1 M1 1 L1 10 M1 1 L7 7" fill="none" stroke="currentColor" strokeWidth="1" /></svg>
+          </div>
+        ))}
+        <Compass size={48} className="mx-auto mb-3" style={{ color: "#5c4030" }} />
+        <h2 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 28, letterSpacing: "0.04em" }}>Chart Awaits</h2>
+        <p className="mt-2 mb-1" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", color: "#5c4030" }}>Drop a map image here, or</p>
+        <button onClick={onPickFile}
+                className="inline-flex items-center gap-2 cursor-pointer px-5 py-2.5 rounded mt-3"
+                style={{ backgroundColor: "#2a1810", color: "#f4e8d0", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em", border: "1px solid #8b6f47" }}>
+          <Upload size={16} /> Upload Chart
+        </button>
+        {error && (
+          <div className="mt-4 px-3 py-2 text-sm rounded flex items-start gap-2" style={{ backgroundColor: "rgba(139, 26, 26, 0.12)", color: "#5c1a1a", border: "1px solid #8b1a1a" }}>
+            <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" /><span>{error}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EditPanel({ item, kind, onClose, onSave, onDelete, onStartMove }) {
+  const [draft, setDraft] = useState({ ...item });
+  const updateDraft = (patch) => setDraft(d => ({ ...d, ...patch }));
+  return (
+    <div className="absolute right-0 top-0 h-full w-full sm:w-96 sm:max-w-[90vw] z-30 shadow-2xl overflow-y-auto"
+         style={{ backgroundColor: "rgba(244, 232, 208, 0.97)", borderLeft: "2px solid #5c4030", fontFamily: "'EB Garamond', serif", animation: "slideInPanel 0.25s cubic-bezier(0.16, 1, 0.3, 1)" }}>
+      <div className="px-5 py-4 flex items-center justify-between border-b sticky top-0"
+           style={{ borderColor: "#8b6f47", backgroundColor: "rgba(244, 232, 208, 0.98)", backdropFilter: "blur(4px)" }}>
+        <h3 style={{ fontFamily: "'IM Fell English SC', serif", fontSize: 18, color: "#2a1810", letterSpacing: "0.04em" }}>
+          {kind === "pin" ? "Pin Inscription" : item.zoneKind === "faction" ? (item.type === "path" ? "Faction Route" : "Faction Territory") : (item.type === "path" ? "Coastline Decree" : "Hot Zone Decree")}
+        </h3>
+        <div className="flex items-center gap-1.5">
+          {onStartMove && (
+            <button onClick={onStartMove}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs"
+                    style={{ backgroundColor: "rgba(42,24,16,0.12)", color: "#5c4030", border: "1px solid #8b6f47", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.05em" }}
+                    title="Drag pin to new location">
+              <GrabHand size={14} /> Move
+            </button>
+          )}
+          <button onClick={() => onSave(draft)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs"
+                  style={{ backgroundColor: "#2a4a1a", color: "#c8f0a8", border: "1px solid #4a6741", fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.05em" }}
+                  title="Save changes">
+            <Check size={14} /> Save
+          </button>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-black/10" title="Discard changes">
+            <X size={18} style={{ color: "#5c4030" }} />
+          </button>
+        </div>
+      </div>
+      <div className="px-5 py-4 space-y-4">
+        {kind === "pin" ? <PinEditor item={draft} onUpdate={updateDraft} /> : <ZoneEditor item={draft} onUpdate={updateDraft} />}
+        <div className="pt-3 border-t" style={{ borderColor: "#8b6f47" }}>
+          <button onClick={() => { if (confirm(`Remove this ${kind}?`)) onDelete(); }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm rounded"
+                  style={{ color: "#8b1a1a", border: "1px solid #8b1a1a", backgroundColor: "transparent" }}>
+            <Trash2 size={14} /> {kind === "pin" ? "Remove Pin" : "Remove Zone"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const FieldLabel = ({ children }) => (
+  <label className="block text-xs uppercase tracking-widest mb-1.5" style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030", letterSpacing: "0.1em" }}>{children}</label>
+);
+const inputStyle = () => ({
+  width: "100%", padding: "8px 10px",
+  backgroundColor: "rgba(255, 250, 235, 0.7)",
+  border: "1px solid #8b6f47", borderRadius: 2,
+  fontFamily: "'EB Garamond', serif", fontSize: 15, color: "#2a1810", outline: "none",
+});
+
+function PinEditor({ item, onUpdate }) {
+  const [customExpanded, setCustomExpanded] = useState(!item.customLabel);
+  const customColor = item.customColor || "#7a5c3a";
+  const customIconKey = item.customIconKey || "star";
+  return (
+    <>
+      <div><FieldLabel>Title</FieldLabel><input value={item.title} onChange={(e) => onUpdate({ title: e.target.value })} style={inputStyle()} placeholder="What lies here?" /></div>
+      <div>
+        <FieldLabel>Type</FieldLabel>
+        <div className="grid grid-cols-4 gap-1.5">
+          {Object.entries(PIN_TYPES).map(([key, t]) => {
+            const Icon = t.icon; const active = item.type === key;
+            return (
+              <button key={key} onClick={() => onUpdate({ type: key })}
+                      className="flex flex-col items-center gap-1 py-2 rounded"
+                      style={{ backgroundColor: active ? t.color : "rgba(255, 250, 235, 0.6)", color: active ? "#f4e8d0" : t.color, border: `1px solid ${active ? t.color : t.color + "55"}` }}>
+                <Icon size={16} /><span className="text-[10px] uppercase tracking-wider">{t.label}</span>
+              </button>
+            );
+          })}
+          {/* Custom type tile */}
+          <button onClick={() => onUpdate({ type: "custom", customLabel: item.customLabel || "Custom", customColor: customColor, customIconKey: customIconKey })}
+                  className="flex flex-col items-center gap-1 py-2 rounded"
+                  style={{ backgroundColor: item.type === "custom" ? customColor : "rgba(255, 250, 235, 0.6)", color: item.type === "custom" ? "#f4e8d0" : "#5c4030", border: `1px solid ${item.type === "custom" ? customColor : "#8b6f4755"}`, gridColumn: "span 1" }}>
+            <Plus size={16} /><span className="text-[10px] uppercase tracking-wider">Custom</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Custom pin definition fields */}
+      {item.type === "custom" && (
+        <div className="rounded" style={{ border: "1px solid #8b6f47" }}>
+          <button onClick={() => setCustomExpanded(e => !e)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-xs"
+                  style={{ fontFamily: "'IM Fell English SC', serif", color: "#5c4030", backgroundColor: "rgba(255,250,235,0.5)", borderRadius: customExpanded ? "2px 2px 0 0" : 2 }}>
+            <span>Custom Style{item.customLabel ? ` · ${item.customLabel}` : ""}</span>
+            <ChevronDown size={12} style={{ transform: customExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+          </button>
+        {customExpanded && <div className="space-y-3 p-3" style={{ backgroundColor: "rgba(255,250,235,0.5)", borderTop: "1px solid #8b6f4755" }}>
+          <div>
+            <FieldLabel>Custom Label</FieldLabel>
+            <input value={item.customLabel || ""} onChange={(e) => onUpdate({ customLabel: e.target.value })} style={inputStyle()} placeholder="e.g. Volcano, Temple, Ruin…" />
+          </div>
+          <div>
+            <FieldLabel>Colour</FieldLabel>
+            <div className="flex items-center gap-3">
+              <input type="color" value={customColor} onChange={(e) => onUpdate({ customColor: e.target.value })}
+                     style={{ width: 36, height: 30, border: "1px solid #8b6f47", borderRadius: 2, cursor: "pointer", padding: 1, backgroundColor: "transparent" }} />
+              <div className="flex gap-1.5 flex-wrap">
+                {["#8b1a1a","#8b4513","#7a5c1a","#1a5c2a","#1a3a6b","#5c1a6b","#4a1a4a","#3a3a3a"].map(c => (
+                  <button key={c} onClick={() => onUpdate({ customColor: c })}
+                          style={{ width: 20, height: 20, backgroundColor: c, borderRadius: "50%", border: customColor === c ? "2px solid #2a1810" : "2px solid transparent", outline: customColor === c ? "2px solid " + c : "none" }} />
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <FieldLabel>Icon</FieldLabel>
+            <div className="grid grid-cols-8 gap-1">
+              {Object.entries(CUSTOM_ICONS).map(([key, Ico]) => {
+                const active = customIconKey === key;
+                return (
+                  <button key={key} onClick={() => onUpdate({ customIconKey: key })}
+                          className="flex items-center justify-center rounded p-1.5"
+                          style={{ backgroundColor: active ? customColor : "rgba(255,250,235,0.6)", color: active ? "#f4e8d0" : "#5c4030", border: `1px solid ${active ? customColor : "#8b6f4755"}` }}
+                          title={key}>
+                    <Ico size={14} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>}
+        </div>
+      )}
+
+      <div><FieldLabel>Notes</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder="The whispers say…" /></div>
+    </>
+  );
+}
+
+function ZoneEditor({ item, onUpdate }) {
+  const isFaction = item.zoneKind === "faction";
+  const factionColor = item.factionColor || "#6b1a8b";
+  return (
+    <>
+      <div>
+        <FieldLabel>{item.type === "path" ? (isFaction ? "Territory Route" : "Coastline Name") : (isFaction ? "Territory Name" : "Zone Name")}</FieldLabel>
+        <input value={item.name} onChange={(e) => onUpdate({ name: e.target.value })} style={inputStyle()} placeholder="What is this region called?" />
+      </div>
+
+      {isFaction ? (
+        <>
+          <div>
+            <FieldLabel>Faction / Group</FieldLabel>
+            <div className="flex items-start gap-1.5 mb-1" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>
+              <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+              Which group holds dominion here?
+            </div>
+            <input value={item.factionName || ""} onChange={(e) => onUpdate({ factionName: e.target.value })} style={inputStyle()} placeholder="e.g. The Iron Circle, Sea Princes…" />
+          </div>
+          <div>
+            <FieldLabel>Faction Colour</FieldLabel>
+            <div className="flex items-center gap-3">
+              <input type="color" value={factionColor} onChange={(e) => onUpdate({ factionColor: e.target.value })}
+                     style={{ width: 36, height: 30, border: "1px solid #8b6f47", borderRadius: 2, cursor: "pointer", padding: 1, backgroundColor: "transparent" }} />
+              <div className="flex gap-1.5 flex-wrap">
+                {FACTION_COLORS.map(c => (
+                  <button key={c} onClick={() => onUpdate({ factionColor: c })}
+                          style={{ width: 20, height: 20, backgroundColor: c, borderRadius: "50%", border: factionColor === c ? "2px solid #2a1810" : "2px solid transparent", outline: factionColor === c ? "2px solid " + c : "none" }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div>
+          <FieldLabel>Danger Level</FieldLabel>
+          <div className="flex items-start gap-1.5 mb-2" style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#5c4030" }}>
+            <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+            How perilous are conditions in this area?
+          </div>
+          <div className="grid grid-cols-5 gap-1">
+            {Object.entries(DANGER_LEVELS).map(([key, d]) => {
+              const active = item.dangerLevel === key;
+              return (
+                <button key={key} onClick={() => onUpdate({ dangerLevel: key })}
+                        className="py-1.5 rounded text-xs uppercase tracking-wider"
+                        style={{ backgroundColor: active ? d.stroke : "transparent", color: active ? "#f4e8d0" : d.stroke, border: `1px solid ${d.stroke}`, fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em" }}>
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+          {item.dangerLevel && <p className="mt-2 text-xs italic" style={{ color: "#5c4030" }}>{DANGER_LEVELS[item.dangerLevel]?.desc}</p>}
+        </div>
+      )}
+
+      <div><FieldLabel>Description</FieldLabel><textarea value={item.description} onChange={(e) => onUpdate({ description: e.target.value })} style={{ ...inputStyle(), minHeight: 140, resize: "vertical", lineHeight: 1.5 }} placeholder={isFaction ? "Notes on this faction's presence…" : "What characterizes this region?"} /></div>
+    </>
+  );
+}
+
+function ZoneKindPicker({ shape, onPick, onDismiss }) {
+  useEffect(() => {
+    const handler = (e) => { onDismiss(); };
+    const t = setTimeout(() => window.addEventListener("pointerdown", handler), 0);
+    return () => { clearTimeout(t); window.removeEventListener("pointerdown", handler); };
+  }, [onDismiss]);
+  return (
+    <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 rounded-sm shadow-2xl overflow-hidden"
+         style={{ backgroundColor: "rgba(22,12,6,0.98)", border: "1px solid #8b6f47", minWidth: 260, animation: "toastPop 0.2s ease-out" }}
+         onPointerDown={(e) => e.stopPropagation()}>
+      <div className="px-4 py-2 border-b text-xs uppercase tracking-widest"
+           style={{ color: "#a89070", borderColor: "#3a2010", fontFamily: "'IM Fell English SC', serif" }}>
+        What kind of {shape === "circle" ? "zone" : "brush stroke"} are you drawing?
+      </div>
+      <button onClick={() => onPick("environmental")}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 text-left transition-colors">
+        <div className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "rgba(139,26,26,0.25)", border: "1px solid #8b1a1a" }}>
+          <AlertTriangle size={18} style={{ color: "#c93838" }} />
+        </div>
+        <div>
+          <div style={{ fontFamily: "'IM Fell English SC', serif", color: "#f4e8d0", fontSize: 15 }}>Environmental</div>
+          <div style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#7a6050" }}>How dangerous is this terrain?</div>
+        </div>
+      </button>
+      <button onClick={() => onPick("faction")}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/8 text-left transition-colors border-t"
+              style={{ borderColor: "#3a2010" }}>
+        <div className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "rgba(147,51,234,0.2)", border: "1px solid #9333ea" }}>
+          <Crown size={18} style={{ color: "#c084fc" }} />
+        </div>
+        <div>
+          <div style={{ fontFamily: "'IM Fell English SC', serif", color: "#f4e8d0", fontSize: 15 }}>Faction</div>
+          <div style={{ fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 12, color: "#7a6050" }}>Which group holds dominion here?</div>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+function ToastContainer({ toasts }) {
+  if (!toasts.length) return null;
+  return (
+    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div key={t.id} className="flex items-center gap-2 px-4 py-2.5 rounded-sm shadow-xl"
+             style={{ animation: "toastPop 0.3s cubic-bezier(0.16, 1, 0.3, 1)", backgroundColor: t.type === "error" ? "rgba(139,26,26,0.97)" : "rgba(28,16,8,0.95)", color: "#f4e8d0", border: t.type === "error" ? "1px solid #8b1a1a" : "1px solid #8b6f47", fontFamily: "'IM Fell English', serif", fontStyle: "italic", fontSize: 14, boxShadow: "0 4px 20px rgba(0,0,0,0.4)", whiteSpace: "nowrap" }}>
+          {t.type === "error" ? <AlertTriangle size={13} style={{ flexShrink: 0 }} /> : <Check size={13} style={{ flexShrink: 0 }} />}
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FilterPanel({ hiddenTypes, hiddenZoneKinds, onToggleType, onToggleZoneKind }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const t = setTimeout(() => document.addEventListener("mousedown", close), 0);
+    return () => { clearTimeout(t); document.removeEventListener("mousedown", close); };
+  }, [open]);
+  const activeCount = hiddenTypes.size + hiddenZoneKinds.size;
+  return (
+    <div ref={ref} className="relative" style={{ pointerEvents: "auto" }}>
+      <button onClick={() => setOpen(o => !o)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs uppercase tracking-wider"
+              style={{ backgroundColor: "rgba(42,24,16,0.93)", color: "#f4e8d0", border: `1px solid ${activeCount > 0 ? "#c4641e" : "#8b6f47"}`, fontFamily: "'IM Fell English SC', serif", letterSpacing: "0.06em" }}>
+        <Eye size={13} />
+        <span>Filters</span>
+        {activeCount > 0 && (
+          <span style={{ backgroundColor: "#c4641e", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontFamily: "sans-serif", flexShrink: 0 }}>{activeCount}</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 mb-2 rounded-sm shadow-2xl overflow-hidden"
+             style={{ backgroundColor: "rgba(22,12,6,0.97)", border: "1px solid #8b6f47", minWidth: 190, animation: "toastPop 0.2s ease-out" }}>
+          <div className="px-3 py-1.5 border-b text-xs uppercase tracking-widest"
+               style={{ borderColor: "#3a2010", color: "#a89070", fontFamily: "'IM Fell English SC', serif" }}>Pins</div>
+          {Object.entries(PIN_TYPES).map(([key, t]) => {
+            const Icon = t.icon; const hidden = hiddenTypes.has(key);
+            return (
+              <button key={key} onClick={() => onToggleType(key)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
+                      style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                <Icon size={11} style={{ color: t.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>{t.label}</span>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : t.color, border: `1.5px solid ${t.color}`, flexShrink: 0, transition: "background-color 0.15s" }} />
+              </button>
+            );
+          })}
+          {(() => { const hidden = hiddenTypes.has("custom"); return (
+            <button onClick={() => onToggleType("custom")}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
+                    style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+              <Plus size={11} style={{ color: "#8b6f47", flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>Custom</span>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : "#8b6f47", border: "1.5px solid #8b6f47", flexShrink: 0, transition: "background-color 0.15s" }} />
+            </button>
+          ); })()}
+          <div className="px-3 py-1.5 border-t border-b text-xs uppercase tracking-widest"
+               style={{ borderColor: "#3a2010", color: "#a89070", fontFamily: "'IM Fell English SC', serif" }}>Hot Zones</div>
+          {[
+            { key: "environmental", label: "Environmental", icon: AlertTriangle, color: "#c4641e" },
+            { key: "faction",       label: "Faction",       icon: Crown,         color: "#9333ea" },
+          ].map(({ key, label, icon: Icon, color }) => {
+            const hidden = hiddenZoneKinds.has(key);
+            return (
+              <button key={key} onClick={() => onToggleZoneKind(key)}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
+                      style={{ opacity: hidden ? 0.42 : 1, backgroundColor: "transparent", transition: "opacity 0.15s" }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.07)"}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                <Icon size={11} style={{ color, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "#f4e8d0", flex: 1, fontFamily: "'IM Fell English SC', serif" }}>{label}</span>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: hidden ? "transparent" : color, border: `1.5px solid ${color}`, flexShrink: 0, transition: "background-color 0.15s" }} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompassRose({ size = 80 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.3))" }}>
+      <circle cx="50" cy="50" r="48" fill="none" stroke="#2a1810" strokeWidth="0.8" />
+      <circle cx="50" cy="50" r="42" fill="none" stroke="#2a1810" strokeWidth="0.4" />
+      <g stroke="#2a1810" strokeWidth="0.5" fill="#5c4030">
+        <polygon points="50,5 53,50 50,55 47,50" fill="#2a1810" />
+        <polygon points="50,95 53,50 50,45 47,50" />
+        <polygon points="5,50 50,53 55,50 50,47" />
+        <polygon points="95,50 50,53 45,50 50,47" />
+      </g>
+      <g stroke="#2a1810" strokeWidth="0.3" fill="#8b6f47" opacity="0.7">
+        <polygon points="50,15 52,50 50,52 48,50" />
+        <polygon points="50,85 52,50 50,48 48,50" />
+        <polygon points="15,50 50,52 52,50 50,48" />
+        <polygon points="85,50 50,52 48,50 50,48" />
+      </g>
+      <circle cx="50" cy="50" r="3" fill="#2a1810" />
+      <text x="50" y="12" textAnchor="middle" fontSize="7" fill="#2a1810" fontFamily="serif" fontWeight="bold">N</text>
+      <text x="50" y="93" textAnchor="middle" fontSize="6" fill="#2a1810" fontFamily="serif">S</text>
+      <text x="93" y="53" textAnchor="middle" fontSize="6" fill="#2a1810" fontFamily="serif">E</text>
+      <text x="7"  y="53" textAnchor="middle" fontSize="6" fill="#2a1810" fontFamily="serif">W</text>
+    </svg>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
